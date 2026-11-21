@@ -1,21 +1,21 @@
 :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #141321; color: #f4f0ff; }
 * { box-sizing: border-box; }
-body { width: 330px; margin: 0; padding: 20px; }
-header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+body { width: 330px; margin: 0; padding: 14px 20px; }
+header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .logo { display: grid; place-items: center; width: 44px; height: 44px; font-size: 36px; background: #b5a0ef; color: #201831; border-radius: 15px; }
 h1 { font-size: 20px; margin: 0 0 3px; letter-spacing: -.5px; }
 header p, .hint, footer { font-size: 11px; color: #b4aec8; margin: 0; }
-.power-row { display: flex; align-items: center; justify-content: space-between; padding: 13px; background: #242133; border: 1px solid #393246; border-radius: 13px; }
+.power-row { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: #242133; border: 1px solid #393246; border-radius: 13px; }
 .power-row label { font-weight: 650; font-size: 14px; }
 input[type=checkbox] { appearance: none; width: 38px; height: 22px; margin: 0; background: #655f75; border-radius: 20px; cursor: pointer; position: relative; }
 input[type=checkbox]::after { content: ""; position: absolute; width: 16px; height: 16px; top: 3px; left: 3px; background: #fff; border-radius: 50%; }
 input[type=checkbox]:checked { background: #a98ae5; }
 input[type=checkbox]:checked::after { left: 19px; }
-fieldset { border: 0; padding: 0; margin: 19px 0 0; min-width: 0; }
+fieldset { border: 0; padding: 0; margin: 17px 0 0; min-width: 0; }
 fieldset label { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
 output { color: #d6c1ff; font-variant-numeric: tabular-nums; font-size: 17px; }
 input[type=range] { width: 100%; accent-color: #c6a7ff; margin: 12px 0 6px; cursor: pointer; }
-.hint { margin-bottom: 18px; }
+.hint { margin-bottom: 12px; }
 .bass-label { margin-top: 16px; }
 .presets { display: flex; gap: 7px; margin-top: 19px; }
 button { flex: 1; border: 1px solid #49405b; border-radius: 9px; padding: 9px 4px; background: #292337; color: #ede1ff; cursor: pointer; font: inherit; font-size: 12px; }
@@ -26,3 +26,4 @@ button[aria-pressed=true] { background: #503b70; border-color: #bc94f5; }
 fieldset:disabled { opacity: .55; }
 #status { font-size: 12px; line-height: 1.5; color: #c7bdd9; min-height: 36px; margin: 14px 0; }
 footer { border-top: 1px solid #332c40; padding-top: 14px; font-size: 10px; }
+footer button { display: block; margin-top: 4px; padding: 2px 0; border: 0; background: none; font-size: 11px; color: #d6c1ff; }

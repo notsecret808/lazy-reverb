@@ -5,9 +5,29 @@ const mix = document.querySelector("#mix");
 const bass = document.querySelector("#bass");
 const controls = document.querySelector("#controls");
 const status = document.querySelector("#status");
+const shortcutLabel = document.querySelector("#shortcut");
+const shortcutReset = document.querySelector("#shortcut-reset");
 let tabId;
 let queue = Promise.resolve();
 let revision = 0;
+
+async function showShortcut() {
+  try {
+    const commands = await browser.commands.getAll();
+    const shortcut = commands.find(command => command.name === "_execute_action")?.shortcut;
+    shortcutLabel.textContent = shortcut ? `${shortcut} — открыть панель` : "Горячая клавиша не назначена";
+  } catch {
+    shortcutLabel.textContent = "Не удалось прочитать горячую клавишу";
+  }
+}
+
+shortcutReset.addEventListener("click", async () => {
+  try {
+    await browser.commands.update({ name: "_execute_action", shortcut: "Ctrl+Shift+F8" });
+    await showShortcut();
+  } catch (error) { shortcutLabel.textContent = `Не удалось назначить: ${error.message}`; }
+});
+showShortcut();
 
 function labels() {
   document.querySelector("#rate-value").value = `${Number(rate.value).toLocaleString("ru-RU", { minimumFractionDigits: 2 })}×`;

@@ -124,3 +124,9 @@ test('faster preset enables playback above normal speed without adding reverb', 
   await expect.poll(() => lab.state(page)).toMatchObject({ enabled: true, rate: 1.25, mix: 0, graphCount: 0 });
 });
 
+test('shortcut binding can be reset from the panel without affecting playback', async ({ lab }) => {
+  const page = await lab.player(); const panel = await lab.open(page);
+  await panel.getByRole('button', { name: 'Назначить Ctrl+Shift+F8' }).click();
+  await expect(panel.locator('#shortcut')).toContainText('Ctrl+Shift+F8');
+  expect(await lab.state(page)).toMatchObject({ enabled: false, rateNow: 1.25 });
+});

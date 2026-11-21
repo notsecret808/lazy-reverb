@@ -5,8 +5,8 @@ const vm = require('node:vm');
 const code = readFileSync(`${__dirname}/../popup.js`, 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-async function popup({ url = 'https://www.youtube.com/watch?v=test', preferences, configured = true, unavailable = false } = {}) {
-  const selectors = ['enabled', 'rate', 'mix', 'bass', 'controls', 'status', 'rate-value', 'mix-value', 'bass-value'];
+async function popup({ url = 'https://www.youtube.com/watch?v=test', preferences, configured = true, unavailable = false, shortcut = 'Ctrl+Shift+F8' } = {}) {
+  const selectors = ['enabled', 'rate', 'mix', 'bass', 'controls', 'status', 'rate-value', 'mix-value', 'bass-value', 'shortcut', 'shortcut-reset'];
   const elements = Object.fromEntries(selectors.map(name => [name, {
     value: '', checked: false, disabled: true, textContent: '', events: {},
     addEventListener(name, listener) { this.events[name] = listener; },
@@ -15,8 +15,15 @@ async function popup({ url = 'https://www.youtube.com/watch?v=test', preferences
     addEventListener(name, listener) { this.events[name] = listener; }, setAttribute() {} };
   let state = { enabled: false, rate: 0.85, mix: 0.25, bass: 0, configured, mediaCount: 1, graphCount: 0 };
   const calls = []; const saves = [];
-  const failures = { injection: false, storage: false };
+  const failures = { injection: false, storage: false, shortcut: false };
   const browser = {
+    commands: {
+      getAll: async () => [{ name: '_execute_action', shortcut }],
+      update: async command => {
+        if (failures.shortcut) { failures.shortcut = false; throw Error('Сочетание недоступно'); }
+        assert.equal(command.name, '_execute_action'); shortcut = command.shortcut;
+      },
+    },
     tabs: { query: async () => [{ id: 42, url }] },
     scripting: { executeScript: async request => {
       calls.push(request);
@@ -105,4 +112,20 @@ test('a storage failure is visible and subsequent updates can still be saved', a
   assert.equal(state().bass, 6); assert.match(elements.status.textContent, /Не удалось сохранить/);
   elements.bass.value = '7'; elements.bass.events.input(); await settle();
   assert.equal(saves.length, 1); assert.equal(saves[0].preferences.bass, 7);
+});
+
+test('the actual registered shortcut is shown and can be reassigned even on unsupported tabs', async () => {
+  const { elements, calls } = await popup({ url: 'about:blank', shortcut: 'Alt+Shift+L' });
+  assert.match(elements.shortcut.textContent, /Alt\+Shift\+L/);
+  elements['shortcut-reset'].events.click(); await settle();
+  assert.match(elements.shortcut.textContent, /Ctrl\+Shift\+F8/);
+  assert.equal(calls.length, 0); assert.equal(elements.enabled.disabled, true);
+});
+
+test('unassigned shortcuts and binding errors are visible without disrupting media controls', async () => {
+  const { elements, failures } = await popup({ shortcut: '' });
+  assert.match(elements.shortcut.textContent, /не назначена/);
+  failures.shortcut = true; elements['shortcut-reset'].events.click(); await settle();
+  assert.match(elements.shortcut.textContent, /Сочетание недоступно/);
+  assert.equal(elements.enabled.disabled, false);
 });

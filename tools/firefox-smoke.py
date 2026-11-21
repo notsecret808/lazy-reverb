@@ -104,9 +104,19 @@ const done = arguments[arguments.length - 1];
         if not popup or popup['title'] != 'Lazy Reverb' or popup['status'] != 'Откройте YouTube или SoundCloud, чтобы включить эффект.' or not popup['disabled']:
             raise RuntimeError(f'Popup test failed: {popup}')
         print('Popup: real extension page and unsupported-tab handling OK')
-        ui = client.execute('return {bass: document.querySelector("#bass")?.max, shortcut: document.querySelector("footer")?.textContent, height: document.body.getBoundingClientRect().height};').get('value')
-        if ui['bass'] != '12' or 'Alt+Shift+L' not in ui['shortcut'] or ui['height'] > 600:
+        for _ in range(30):
+            ui = client.execute('return {bass: document.querySelector("#bass")?.max, rate: document.querySelector("#rate")?.max, mix: document.querySelector("#mix")?.max, shortcut: document.querySelector("#shortcut")?.textContent, height: document.body.getBoundingClientRect().height};').get('value')
+            if ui['shortcut'] != 'Проверяем сочетание…':
+                break
+            time.sleep(0.1)
+        if ui['bass'] != '12' or ui['rate'] != '2' or ui['mix'] != '1' or 'Ctrl+Shift+F8' not in ui['shortcut'] or ui['height'] > 600:
             raise RuntimeError(f'Bass/shortcut/layout test failed: {ui}')
+        client.execute('document.querySelector("#shortcut-reset").click();')
+        time.sleep(0.1)
+        registered = client.execute('return document.querySelector("#shortcut").textContent;')['value']
+        if 'Ctrl+Shift+F8' not in registered:
+            raise RuntimeError(f'Native commands.update failed: {registered}')
+        print('Native shortcut registration:', registered)
         if args.screenshot:
             element = client.command('WebDriver:FindElement', {'using': 'css selector', 'value': 'body'})
             element_id = element['value']['element-6066-11e4-a52e-4f735466cecf']

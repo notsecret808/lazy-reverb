@@ -37,6 +37,7 @@ const test = base.extend({
     let currentTab;
     let currentPanel;
     let preferences;
+    let shortcut = 'Ctrl+Shift+F8';
     const writes = [];
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
@@ -57,6 +58,8 @@ const test = base.extend({
       if (method === 'tabs') return [{ id: currentTab, url: pages.get(currentTab).url() }];
       if (method === 'get') return { preferences: structuredClone(preferences) };
       if (method === 'set') { preferences = structuredClone(request.preferences); writes.push(preferences); return; }
+      if (method === 'shortcuts-get') return [{ name: '_execute_action', shortcut }];
+      if (method === 'shortcuts-set') { shortcut = request.shortcut; return; }
       if (method === 'execute') {
         if (request.world !== 'MAIN' || !pages.has(request.target.tabId)) throw Error('Invalid injection target');
         const result = await pages.get(request.target.tabId).evaluate(({ source, args }) => {
@@ -70,6 +73,10 @@ const test = base.extend({
     await context.addInitScript(({ panelHost }) => {
       if (location.hostname !== panelHost) return;
       window.browser = {
+        commands: {
+          getAll: () => window.__extensionCall('shortcuts-get'),
+          update: request => window.__extensionCall('shortcuts-set', request),
+        },
         tabs: { query: () => window.__extensionCall('tabs') },
         scripting: { executeScript: request => window.__extensionCall('execute', {
           target: request.target, world: request.world, args: request.args, source: request.func.toString(),
