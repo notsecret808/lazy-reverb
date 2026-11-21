@@ -11,6 +11,7 @@ module.exports = defineConfig({
   use: {
     browserName: 'firefox',
     headless: true,
+    serviceWorkers: 'block',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

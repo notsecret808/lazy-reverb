@@ -1,5 +1,7 @@
 // Playwright does not support Firefox extension APIs. This test-only bridge
 // runs the unchanged popup injection function in a real Firefox player page.
+// Service hostnames exercise the production allowlist without live requests;
+// every response is fulfilled below from local HTML, assets or generated PCM.
 const { test: base, expect } = require('@playwright/test');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');

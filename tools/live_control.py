@@ -1,11 +1,15 @@
 """No-addon control for live YouTube playback availability; no page hooks."""
+import argparse
 import json
 import time
 from browser_session import browser_session, ROOT
 
 
 def main():
-    result = {'url': 'https://www.youtube.com/watch?v=K4DyBUG242c', 'addon': 'uninstalled before navigation', 'samples': []}
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--url', required=True, help='YouTube URL to check without the addon')
+    args = parser.parse_args()
+    result = {'url': args.url, 'addon': 'uninstalled before navigation', 'samples': []}
     with browser_session('/opt/zen/zen') as client:
         client.command('Addon:Uninstall', {'id': 'lazy-reverb@local.example'})
         client.command('WebDriver:Navigate', {'url': result['url']})

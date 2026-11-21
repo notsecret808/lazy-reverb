@@ -11,11 +11,6 @@ import time
 from browser_session import browser_session, ROOT
 from performance import usage, cpu_delta
 
-SITES = {
-    'youtube': 'https://www.youtube.com/watch?v=K4DyBUG242c',
-    'soundcloud': 'https://soundcloud.com/nocopyrightsounds/deaf-kev-invincible-ncs-release',
-}
-
 PROBE = '''
 if (!window.__lrLiveProbe) {
   const probe = window.__lrLiveProbe = {media: document.querySelector('video,audio'), gaps: [], last: performance.now()};
@@ -133,14 +128,14 @@ def measure(client, pid, mode):
     return row
 
 
-def run(service):
-    result = {'service': service, 'url': SITES[service], 'results': []}
+def run(service, url):
+    result = {'service': service, 'url': url, 'results': []}
     with browser_session('/opt/zen/zen') as client:
         try:
             client.command('Marionette:SetContext', {'value': 'chrome'})
             pid = get(client, 'return Services.appinfo.processID;')
             client.command('Marionette:SetContext', {'value': 'content'})
-            client.command('WebDriver:Navigate', {'url': SITES[service]})
+            client.command('WebDriver:Navigate', {'url': url})
             time.sleep(5)
             prepare(client, service)
             time.sleep(45 if service == 'youtube' else 20)
@@ -181,14 +176,13 @@ def run(service):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--service', choices=['youtube','soundcloud','all'], default='all')
+    parser.add_argument('--service', choices=['youtube','soundcloud'], required=True)
+    parser.add_argument('--url', required=True, help='Live player URL for the selected service')
     args = parser.parse_args()
-    services = list(SITES) if args.service == 'all' else [args.service]
     destination = ROOT / 'dist' / 'performance-live.json'
     report = {'method': 'Anonymous headless Zen, continuous real public playback, no forced seeking or quality changes; four 3-second CPU samples per mode after settling. 100% means one core. PSS is whole browser group. 50ms timer p95 is a page-main-thread scheduling proxy, not a UI/FPS guarantee. Live-network observations are not the deterministic DSP gate.', 'sites': []}
-    for service in services:
-        report['sites'].append(run(service))
-        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n')
+    report['sites'].append(run(args.service, args.url))
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n')
     print('Live report:', destination, flush=True)
 
 

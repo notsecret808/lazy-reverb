@@ -1,18 +1,16 @@
 """Check whether anonymous live players are accessible before benchmarking."""
+import argparse
 import json
 import time
 from browser_session import browser_session, ROOT
 
-URLS = [
-    'https://www.youtube.com/watch?v=K4DyBUG242c',
-    'https://soundcloud.com/odesza/say-my-name-feat-zyra',
-]
-
-
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--url', action='append', required=True, help='Live player URL; repeat for multiple players')
+    args = parser.parse_args()
     results = []
     with browser_session('/opt/zen/zen') as client:
-        for url in URLS:
+        for url in args.url:
             item = {'requested_url': url}
             try:
                 client.command('WebDriver:Navigate', {'url': url})
