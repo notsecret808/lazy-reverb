@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Lazy Reverb",
+  "version": "0.2.0",
+  "description": "Slowed + reverb и бас-буст для YouTube и SoundCloud в Zen Browser и Firefox. Обработка на устройстве.",
+  "permissions": ["scripting", "storage"],
+  "host_permissions": ["https://*.youtube.com/*", "https://soundcloud.com/*", "https://www.soundcloud.com/*"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "lazy-reverb@local.example",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  },
+  "action": { "default_title": "Lazy Reverb", "default_popup": "popup.html", "default_icon": "icon.svg" },
+  "icons": { "48": "icon.svg", "96": "icon.svg" },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+L" },
+      "description": "Открыть Lazy Reverb"
+    }
+  },
+  "content_scripts": [{
+    "matches": ["https://*.youtube.com/*", "https://soundcloud.com/*", "https://www.soundcloud.com/*"],
+    "js": ["engine.js"],
+    "run_at": "document_start",
+    "world": "MAIN"
+  }]
+}

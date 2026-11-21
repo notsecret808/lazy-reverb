@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lazy Reverb</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <header><span class="logo" aria-hidden="true">≈</span><div><h1>Lazy Reverb</h1><p>медленнее · глубже · спокойнее</p></div></header>
+  <main>
+    <div class="power-row"><label for="enabled">Аудиоэффекты</label><input id="enabled" type="checkbox" role="switch" disabled></div>
+    <fieldset id="controls" disabled>
+      <label for="rate">Скорость <output id="rate-value" for="rate">0,85×</output></label>
+      <input id="rate" type="range" min="0.5" max="1" step="0.01" value="0.85">
+      <p class="hint">Ниже скорость — ниже тон.</p>
+      <label for="mix">Реверберация <output id="mix-value" for="mix">25 %</output></label>
+      <input id="mix" type="range" min="0" max="0.6" step="0.01" value="0.25">
+      <label class="bass-label" for="bass">Бас-буст <output id="bass-value" for="bass">0 дБ</output></label>
+      <input id="bass" type="range" min="0" max="12" step="1" value="0" aria-describedby="bass-hint">
+      <p class="hint" id="bass-hint">Громкость компенсируется против перегруза.</p>
+      <div class="presets" aria-label="Готовые настройки">
+        <button type="button" data-rate="0.92" data-mix="0.15">Мягко</button>
+        <button type="button" data-rate="0.85" data-mix="0.25">Лениво</button>
+        <button type="button" data-rate="0.75" data-mix="0.4">Глубоко</button>
+      </div>
+    </fieldset>
+    <p id="status" role="status" aria-live="polite">Подключение к вкладке…</p>
+  </main>
+  <footer>Alt+Shift+L — открыть панель · обработка локально</footer>
+</body>
+</html>

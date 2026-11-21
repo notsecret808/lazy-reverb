@@ -1,0 +1,14 @@
+{
+  "name": "lazy-reverb",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:unit": "node --test tests/engine.test.cjs tests/popup.test.cjs",
+    "check": "python3 tools/test.py --browser /opt/zen/zen",
+    "check:perf": "python3 tools/performance.py --browser /opt/zen/zen"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
+  }
+}

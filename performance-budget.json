@@ -1,0 +1,7 @@
+{
+  "baseline_drift_cpu_points": 5,
+  "sample_drift_cpu_points": 10,
+  "disabled_cpu_overhead_points": 5,
+  "enabled_cpu_overhead_points": 20,
+  "memory_overhead_mib": 64
+}
