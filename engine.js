@@ -227,8 +227,8 @@
     error = "";
     const wasEnabled = settings.enabled;
     if (typeof options.enabled === "boolean") settings.enabled = options.enabled;
-    if (Number.isFinite(options.rate)) settings.rate = Math.min(1, Math.max(0.5, options.rate));
-    if (Number.isFinite(options.mix)) settings.mix = Math.min(0.6, Math.max(0, options.mix));
+    if (Number.isFinite(options.rate)) settings.rate = Math.min(2, Math.max(0.5, options.rate));
+    if (Number.isFinite(options.mix)) settings.mix = Math.min(1, Math.max(0, options.mix));
     if (Number.isFinite(options.bass)) settings.bass = Math.min(12, Math.max(0, options.bass));
     configured = true;
     if (settings.enabled && !wasEnabled) scan(document);

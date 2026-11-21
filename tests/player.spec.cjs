@@ -106,3 +106,21 @@ test('unsupported site has no engine and the panel cannot enable effects', async
   await expect(panel.getByRole('switch')).toBeDisabled();
   expect(await page.evaluate(() => window.__lazyReverb === undefined)).toBe(true);
 });
+
+test('speed up to 2x and reverb to 100 percent are available from the panel', async ({ lab }) => {
+  const page = await lab.player(); const panel = await lab.open(page);
+  await lab.slider(panel, 'rate', 2); await lab.slider(panel, 'mix', 1);
+  await panel.getByRole('switch').check();
+  await expect.poll(() => lab.state(page)).toMatchObject({ enabled: true, rate: 2, rateNow: 2, mix: 1, pitchNow: false });
+  await expect(panel.locator('#rate-value')).toHaveText('2,00×');
+  await expect(panel.locator('#mix-value')).toHaveText('100 %');
+  await panel.getByRole('switch').uncheck();
+  await expect.poll(() => lab.state(page)).toMatchObject({ rateNow: 1.25, pitchNow: true, paused: false });
+});
+
+test('faster preset enables playback above normal speed without adding reverb', async ({ lab }) => {
+  const page = await lab.player(); const panel = await lab.open(page);
+  await panel.getByRole('button', { name: 'Быстрее' }).click();
+  await expect.poll(() => lab.state(page)).toMatchObject({ enabled: true, rate: 1.25, mix: 0, graphCount: 0 });
+});
+

@@ -126,7 +126,7 @@ test('settings reject invalid types, clamp numbers, and leave offline graphs alo
   api.set({ enabled: 'yes', rate: NaN, mix: Infinity, bass: 'loud' });
   assert.equal(api.get().enabled, false); assert.equal(api.get().rate, 0.85); assert.equal(api.get().mix, 0.25); assert.equal(api.get().bass, 0);
   api.set({ rate: -2, mix: 9, bass: 99 });
-  assert.equal(api.get().rate, 0.5); assert.equal(api.get().mix, 0.6); assert.equal(api.get().bass, 12);
+  assert.equal(api.get().rate, 0.5); assert.equal(api.get().mix, 1); assert.equal(api.get().bass, 12);
   const offline = {}; offline.destination = new Node(offline);
   const source = new Node(offline); source.connect(offline.destination);
   assert.equal(source.connections[0][0], offline.destination);
@@ -206,3 +206,18 @@ test('repeated toggles and slider changes keep one source and a bounded graph', 
   assert.equal(ctx.convolvers[0].buffer, null); assert.equal(ctx.convolvers[0].connections.length, 0);
   assert.equal(ctx.filters[0].connections.length, 0); assert.equal(player.playbackRate, 1.25);
 });
+
+test('speed up and full wet mix work, clamp safely and restore original media settings', () => {
+  const { api, elements, Media, Context, Node } = fixture();
+  const player = new Media(); player.playbackRate = 1.1; elements.push(player);
+  const context = new Context(); const source = new Node(context); source.connect(context.destination);
+  const input = source.connections[0][0]; const dry = input.connections[0][0];
+  api.set({ enabled: true, rate: 1.75, mix: 1 });
+  assert.equal(player.playbackRate, 1.75); assert.equal(player.preservesPitch, false);
+  assert.equal(dry.gain.value, 0); assert.equal(context.convolvers[0].connections[0][0].gain.value, 1);
+  api.set({ rate: 20, mix: 20 }); assert.equal(api.get().rate, 2); assert.equal(api.get().mix, 1);
+  api.set({ enabled: false });
+  assert.equal(player.playbackRate, 1.1); assert.equal(player.preservesPitch, true);
+  assert.equal(dry.gain.value, 1); assert.equal(context.convolvers[0].buffer, null);
+});
+
