@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "scripts": {
+    "package": "python3 tools/package.py",
     "test": "playwright test",
     "test:unit": "node --expose-gc --test tests/engine.test.cjs tests/popup.test.cjs",
     "check": "python3 tools/test.py --browser /opt/zen/zen",
