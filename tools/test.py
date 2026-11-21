@@ -20,7 +20,7 @@ def main():
     ]
     for check in checks:
         print('Running:', ' '.join(check), flush=True)
-        subprocess.run(['rtk', 'run', *check], cwd=ROOT, check=True)
+        subprocess.run(check, cwd=ROOT, check=True)
     print('All checks passed.', flush=True)
 
 
