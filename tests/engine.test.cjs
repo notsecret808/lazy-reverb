@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const code = readFileSync(`${__dirname}/../engine.js`, 'utf8');
 
 function fixture() {
+  const contexts = [];
   class Param {
     value = 1;
     cancelScheduledValues() {}
@@ -19,7 +20,7 @@ function fixture() {
     }
   }
   class Context {
-    constructor() { this.destination = new Node(this); this.currentTime = 0; this.sampleRate = 1000; this.state = 'running'; this.sources = []; this.convolvers = []; this.filters = []; }
+    constructor() { this.destination = new Node(this); this.currentTime = 0; this.sampleRate = 1000; this.state = 'running'; this.sources = []; this.convolvers = []; this.filters = []; contexts.push(this); }
     createGain() { return new Node(this); }
     createConvolver() { const node = new Node(this); node.buffer = null; this.convolvers.push(node); return node; }
     createBiquadFilter() { const node = new Node(this); node.frequency = new Param(); this.filters.push(node); return node; }
@@ -30,7 +31,7 @@ function fixture() {
   class Media {
     constructor(src = 'https://www.youtube.com/audio') { this.src = src; this.currentSrc = src; this.crossOrigin = null; this.preservesPitch = true; this.playbackRate = 1; this.events = {}; }
     addEventListener(name, fn) { this.events[name] = fn; }
-    play() { this.played = true; return Promise.resolve(); }
+    play() { this.played = true; this.paused = false; return Promise.resolve(); }
   }
   const elements = [];
   const stats = { scans: 0 };
@@ -42,7 +43,7 @@ function fixture() {
     MutationObserver: class { constructor() { throw Error('DOM observation is not needed'); } }
   };
   vm.runInNewContext(code, scope);
-  return { api: scope.window.__lazyReverb, elements, Media, Context, Node, stats, events };
+  return { api: scope.window.__lazyReverb, elements, Media, Context, Node, stats, events, contexts };
 }
 
 test('off by default; enabling lowers pitch; bypass restores the original media settings', () => {
@@ -221,3 +222,53 @@ test('speed up and full wet mix work, clamp safely and restore original media se
   assert.equal(dry.gain.value, 1); assert.equal(context.convolvers[0].buffer, null);
 });
 
+test('retired detached players restore settings, disconnect owned sources and can replay while off', async () => {
+  const { api, Media, contexts } = fixture();
+  api.set({ enabled: true, rate: 0.7, bass: 6 });
+  const player = new Media(); player.isConnected = false; player.playbackRate = 1.25;
+  await player.play();
+  const context = contexts[0]; const source = context.sources[0].source;
+  assert.equal(api.get().mediaCount, 1); assert.ok(context.convolvers[0].buffer);
+  player.paused = true; player.events.pause();
+  assert.equal(api.get().mediaCount, 0); assert.equal(source.connections.length, 0);
+  assert.equal(player.playbackRate, 1.25); assert.equal(player.preservesPitch, true);
+  assert.equal(context.convolvers[0].buffer, null);
+  api.set({ enabled: false }); context.state = 'suspended';
+  await player.play();
+  assert.equal(context.sources.length, 1); assert.equal(source.connections.length, 1);
+  assert.equal(context.state, 'running'); assert.equal(player.playbackRate, 1.25);
+  assert.equal(api.get().mediaCount, 1);
+  api.set({ enabled: true });
+  assert.equal(player.playbackRate, 0.7); assert.equal(context.sources.length, 1);
+});
+
+test('playing detached Audio stays tracked; retired site sources are not disconnected', async () => {
+  const { api, Media, Context } = fixture();
+  const player = new Media(); player.isConnected = false; player.paused = false;
+  const context = new Context(); const source = context.createMediaElementSource(player);
+  source.connect(context.destination); api.set({ enabled: true });
+  assert.equal(api.get().mediaCount, 1);
+  player.paused = true; player.events.emptied();
+  assert.equal(api.get().mediaCount, 0); assert.equal(source.connections.length, 1);
+  await player.play(); assert.equal(api.get().mediaCount, 1); assert.equal(context.sources.length, 1);
+  context.state = 'closed'; assert.equal(api.get().graphCount, 0);
+});
+
+test('registry allows abandoned media and site contexts to be garbage collected', { skip: !global.gc }, async () => {
+  const { api, Media, Context, Node, contexts } = fixture();
+  async function abandonMedia() {
+    const player = new Media('https://cdn.example/audio'); await player.play(); return new WeakRef(player);
+  }
+  function abandonContext() {
+    const context = new Context(); const source = new Node(context); source.connect(context.destination);
+    contexts.length = 0; return new WeakRef(context);
+  }
+  const playerRef = await abandonMedia(); const contextRef = abandonContext();
+  for (let i = 0; i < 10; i++) {
+    await new Promise(resolve => setImmediate(resolve)); global.gc();
+    await new Promise(resolve => setImmediate(resolve));
+    if (!playerRef.deref() && !contextRef.deref()) break;
+  }
+  assert.equal(playerRef.deref(), undefined); assert.equal(contextRef.deref(), undefined);
+  assert.equal(api.get().mediaCount, 0); assert.equal(api.get().graphCount, 0);
+});

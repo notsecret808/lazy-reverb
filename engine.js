@@ -4,10 +4,12 @@
   if (window.__lazyReverb) return;
 
   const settings = { enabled: false, rate: 0.85, mix: 0.25, bass: 0 };
-  const media = new Map();
+  const media = new WeakMap();
+  const mediaRefs = new Set();
   const ownedSources = new WeakMap();
   const siteSources = new WeakSet();
-  const racks = new Map();
+  const racks = new WeakMap();
+  const rackRefs = new Set();
   const nativeConnect = AudioNode.prototype.connect;
   const nativeDisconnect = AudioNode.prototype.disconnect;
   const nativeCreateSource = AudioContext.prototype.createMediaElementSource;
@@ -15,6 +17,64 @@
   let mediaContext;
   let configured = false;
   let error = "";
+
+  function* rackEntries() {
+    for (const ref of rackRefs) {
+      const context = ref.deref();
+      const rack = context && racks.get(context);
+      if (!rack || context.state === "closed") {
+        rackRefs.delete(ref);
+        if (context) racks.delete(context);
+        continue;
+      }
+      yield [context, rack];
+    }
+  }
+
+  function* mediaEntries() {
+    for (const ref of mediaRefs) {
+      const element = ref.deref();
+      const record = element && media.get(element);
+      if (!record || record.ref !== ref) { mediaRefs.delete(ref); continue; }
+      yield [element, record];
+    }
+  }
+
+  function hasOwnedInput() {
+    for (const [element] of mediaEntries()) {
+      if (ownedSources.get(element)?.connected) return true;
+    }
+    return false;
+  }
+
+  function restoreMedia(element, record) {
+    if (!record.original) return;
+    const original = record.original;
+    record.original = null;
+    element.preservesPitch = original.pitch;
+    element.playbackRate = original.rate;
+  }
+
+  function retireMedia(element, record) {
+    if (!record.ref) return;
+    mediaRefs.delete(record.ref);
+    record.ref = null;
+    restoreMedia(element, record);
+    const owned = ownedSources.get(element);
+    if (owned?.connected) {
+      nativeDisconnect.call(owned.source);
+      owned.connected = false;
+      updateRack(owned.context, racks.get(owned.context));
+    }
+  }
+
+  function sweepMedia(except) {
+    for (const [element, record] of mediaEntries()) {
+      // Detached Audio() may intentionally keep playing. Retire only paused
+      // detached players; keep their weak metadata/source for a later replay.
+      if (element !== except && element.paused && !element.isConnected) retireMedia(element, record);
+    }
+  }
 
   function ramp(parameter, value, context) {
     parameter.cancelScheduledValues(context.currentTime);
@@ -37,8 +97,9 @@
 
   function updateRack(context, rack) {
     if (context.state === "closed") return;
-    const mix = settings.enabled ? settings.mix : 0;
-    const bass = settings.enabled ? settings.bass : 0;
+    const active = settings.enabled && (context !== mediaContext || hasOwnedInput());
+    const mix = active ? settings.mix : 0;
+    const bass = active ? settings.bass : 0;
     const wetActive = mix > 0;
     const bassActive = bass > 0;
     if (wetActive && !rack.convolver) {
@@ -96,6 +157,7 @@
     nativeConnect.call(rack.input, rack.dry);
     nativeConnect.call(rack.dry, context.destination);
     racks.set(context, rack);
+    rackRefs.add(new WeakRef(context));
     updateRack(context, rack);
     return rack;
   }
@@ -139,8 +201,8 @@
     }
   }
 
-  function resume(context) {
-    if (settings.enabled && context.state === "suspended") {
+  function resume(context, ownedPlayback = false) {
+    if ((settings.enabled || ownedPlayback) && context.state === "suspended") {
       context.resume().catch(() => { error = "Нажмите Play на странице, чтобы запустить обработку."; });
     }
   }
@@ -155,8 +217,9 @@
       mediaContext ||= new AudioContext();
       const rack = getRack(mediaContext);
       const source = nativeCreateSource.call(mediaContext, element);
-      ownedSources.set(element, { source, context: mediaContext });
       nativeConnect.call(source, rack.input);
+      ownedSources.set(element, { source, context: mediaContext, connected: true });
+      updateRack(mediaContext, rack);
       record.blocked = false;
       resume(mediaContext);
     } catch {
@@ -173,30 +236,44 @@
       element.preservesPitch = false;
       if (element.playbackRate !== settings.rate) element.playbackRate = settings.rate;
       attach(element, record);
-    } else if (record.original) {
-      const original = record.original;
-      record.original = null;
-      element.preservesPitch = original.pitch;
-      element.playbackRate = original.rate;
-    }
+    } else restoreMedia(element, record);
   }
 
   function register(element) {
+    sweepMedia(element);
     let record = media.get(element);
     if (!record) {
-      record = { original: null, blocked: false };
+      record = { original: null, blocked: false, ref: null };
       media.set(element, record);
       element.addEventListener("ratechange", () => {
-        if (settings.enabled && element.playbackRate !== settings.rate) applyMedia(element, record);
+        if (record.ref && settings.enabled && element.playbackRate !== settings.rate) applyMedia(element, record);
       });
-      element.addEventListener("loadedmetadata", () => applyMedia(element, record));
+      element.addEventListener("loadedmetadata", () => { if (record.ref) applyMedia(element, record); });
+      element.addEventListener("play", () => register(element));
+      const cleanup = () => { if (element.paused && !element.isConnected) retireMedia(element, record); };
+      element.addEventListener("pause", cleanup);
+      element.addEventListener("emptied", cleanup);
+    }
+    if (!record.ref) { record.ref = new WeakRef(element); mediaRefs.add(record.ref); }
+    const owned = ownedSources.get(element);
+    if (owned && !owned.connected) {
+      try {
+        const rack = getRack(owned.context);
+        nativeConnect.call(owned.source, rack.input);
+        owned.connected = true;
+        updateRack(owned.context, rack);
+        resume(owned.context, true);
+      } catch {
+        record.blocked = true;
+        error = "Не удалось восстановить аудиопуть плеера.";
+      }
     }
     applyMedia(element, record);
   }
 
   HTMLMediaElement.prototype.play = function (...args) {
     register(this); // Also finds detached new Audio() players used by SoundCloud.
-    if (settings.enabled) for (const context of racks.keys()) resume(context);
+    if (settings.enabled) for (const [context] of rackEntries()) resume(context);
     return nativePlay.apply(this, args);
   };
   document.addEventListener("play", event => {
@@ -204,7 +281,7 @@
   }, true);
   document.addEventListener("pointerdown", () => {
     if (!settings.enabled) return;
-    for (const context of racks.keys()) resume(context);
+    for (const [context] of rackEntries()) resume(context);
   }, true);
 
   function scan(root) {
@@ -213,11 +290,13 @@
   }
 
   function snapshot() {
-    for (const context of racks.keys()) if (context.state === "closed") racks.delete(context);
+    sweepMedia();
+    const records = [...mediaEntries()].map(([, record]) => record);
+    const contexts = [...rackEntries()].map(([context]) => context);
     return {
-      ...settings, configured, mediaCount: media.size, graphCount: racks.size,
-      blockedCount: [...media.values()].filter(record => record.blocked).length,
-      suspended: settings.enabled && [...racks.keys()].some(context => context.state === "suspended"),
+      ...settings, configured, mediaCount: records.length, graphCount: contexts.length,
+      blockedCount: records.filter(record => record.blocked).length,
+      suspended: settings.enabled && contexts.some(context => context.state === "suspended"),
       error
     };
   }
@@ -225,6 +304,7 @@
   function set(options) {
     if (!options || typeof options !== "object") return snapshot();
     error = "";
+    sweepMedia();
     const wasEnabled = settings.enabled;
     if (typeof options.enabled === "boolean") settings.enabled = options.enabled;
     if (Number.isFinite(options.rate)) settings.rate = Math.min(2, Math.max(0.5, options.rate));
@@ -232,8 +312,8 @@
     if (Number.isFinite(options.bass)) settings.bass = Math.min(12, Math.max(0, options.bass));
     configured = true;
     if (settings.enabled && !wasEnabled) scan(document);
-    for (const [element, record] of media) applyMedia(element, record);
-    for (const [context, rack] of racks) { updateRack(context, rack); resume(context); }
+    for (const [element, record] of mediaEntries()) applyMedia(element, record);
+    for (const [context, rack] of rackEntries()) { updateRack(context, rack); resume(context); }
     return snapshot();
   }
 

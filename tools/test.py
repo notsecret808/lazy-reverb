@@ -12,7 +12,7 @@ def main():
     parser.add_argument('--browser', default='firefox', help='Firefox-compatible executable, e.g. /opt/zen/zen')
     args = parser.parse_args()
     checks = [
-        ['node', 'tests/engine.test.cjs'],
+        ['node', '--expose-gc', 'tests/engine.test.cjs'],
         ['node', 'tests/popup.test.cjs'],
         [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_performance_gate.py'],
         [sys.executable, 'tools/firefox-smoke.py', '--browser', args.browser],
