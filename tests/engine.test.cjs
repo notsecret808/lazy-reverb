@@ -159,7 +159,7 @@ test('speed-only media does not create a Web Audio context or warn about CORS', 
   assert.equal(api.set({ bass: 0 }).blockedCount, 0);
 });
 
-test('bass is a lazy low shelf with headroom; disabling disconnects FX and frees the impulse', () => {
+test('bass boosts without attenuation; disabling disconnects FX and frees the impulse', () => {
   const { api, Context, Node } = fixture();
   const ctx = new Context(); const source = new Node(ctx); source.connect(ctx.destination);
   const input = source.connections[0][0];
@@ -168,15 +168,16 @@ test('bass is a lazy low shelf with headroom; disabling disconnects FX and frees
   const filter = ctx.filters[0]; const convolver = ctx.convolvers[0];
   assert.equal(filter.type, 'lowshelf'); assert.equal(filter.frequency.value, 200);
   assert.equal(filter.gain.value, 6);
-  const headroom = filter.connections[0][0];
-  assert.ok(Math.abs(headroom.gain.value - Math.pow(10, -6 / 20)) < 1e-9);
+  assert.equal(filter.connections[0][0], dry);
+  assert.equal(dry.gain.value, 0.7);
+  assert.equal(filter.connections[1][0], convolver);
   assert.equal(input.connections.length, 1); assert.equal(input.connections[0][0], filter);
   assert.ok(convolver.buffer);
   api.set({ bass: 12 });
   assert.equal(ctx.filters.length, 1); assert.equal(filter.gain.value, 12);
   api.set({ enabled: false });
   assert.equal(convolver.buffer, null); assert.equal(convolver.connections.length, 0);
-  assert.equal(filter.connections.length, 0); assert.equal(headroom.connections.length, 0);
+  assert.equal(filter.connections.length, 0);
   assert.equal(input.connections.length, 1); assert.equal(input.connections[0][0], dry);
   assert.equal(dry.gain.value, 1);
   api.set({ enabled: true });
@@ -201,7 +202,7 @@ test('repeated toggles and slider changes keep one source and a bounded graph', 
     api.set({ enabled: false }); api.set({ enabled: true });
     assert.equal(ctx.sources.length, 1); assert.equal(ctx.filters.length, 1); assert.equal(ctx.convolvers.length, 1);
     assert.equal(source.connections.length, 1); assert.equal(input.connections.length, 1);
-    assert.equal(ctx.filters[0].connections[0][0].connections.length, 2);
+    assert.equal(ctx.filters[0].connections.length, 2);
   }
   api.set({ enabled: false });
   assert.equal(ctx.convolvers[0].buffer, null); assert.equal(ctx.convolvers[0].connections.length, 0);

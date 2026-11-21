@@ -111,19 +111,17 @@
       rack.bass = context.createBiquadFilter();
       rack.bass.type = "lowshelf";
       rack.bass.frequency.value = 200;
-      rack.headroom = context.createGain();
     }
     if (wetActive !== rack.wetActive || bassActive !== rack.bassActive) {
       // Only our nodes are disconnected. The site's connections and context
       // remain intact; the disabled path is input -> dry -> destination.
-      for (const node of [rack.input, rack.bass, rack.headroom, rack.convolver, rack.wet]) {
+      for (const node of [rack.input, rack.bass, rack.convolver, rack.wet]) {
         if (node) nativeDisconnect.call(node);
       }
       let signal = rack.input;
       if (bassActive) {
         nativeConnect.call(signal, rack.bass);
-        nativeConnect.call(rack.bass, rack.headroom);
-        signal = rack.headroom;
+        signal = rack.bass;
       }
       nativeConnect.call(signal, rack.dry);
       if (wetActive) {
@@ -140,8 +138,6 @@
     }
     if (bassActive) {
       ramp(rack.bass.gain, bass, context);
-      // Reserve headroom equal to the shelf gain to reduce clipping risk.
-      ramp(rack.headroom.gain, Math.pow(10, -bass / 20), context);
     }
     ramp(rack.dry.gain, 1 - mix, context);
     if (rack.wet) ramp(rack.wet.gain, mix, context);
