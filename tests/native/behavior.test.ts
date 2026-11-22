@@ -128,7 +128,7 @@ await test("SPA player replacement, control limits, and speed-only mode", async 
     await fixture.slider(panel, "rate", 2);
     await fixture.slider(panel, "mix", 1);
     await fixture.wait(context, "player.playbackRate === 2 && __lazyReverb.get().mix === 1");
-    assert.equal(await fixture.read(panel, "document.querySelector('#rate-value').value"), "2,00×");
+    assert.equal(await fixture.read(panel, "document.querySelector('#rate-value').value"), "2.00×");
     assert.equal(await fixture.read(panel, "document.querySelector('#mix-value').value"), "100 %");
     await fixture.read(context, `(() => {
       player.pause(); player.remove();
