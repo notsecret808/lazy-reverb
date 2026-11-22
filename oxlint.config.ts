@@ -3,7 +3,7 @@ import { defineConfig } from "oxlint";
 export default defineConfig({
   categories: { correctness: "error" },
   plugins: ["typescript", "unicorn", "oxc"],
-  ignorePatterns: ["dist/**", "node_modules/**", "playwright-report/**", "test-results/**"],
+  ignorePatterns: ["dist/**", "node_modules/**"],
   rules: {
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "error",

@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { buildExtension, dist } from "./build.js";
-import { evaluate, withBrowser } from "./browser-session.js";
+import { defaultDriver, evaluate, withBrowser } from "./browser-session.js";
 import type { BrowserSession } from "./browser-session.js";
 import { packageExtension } from "./package.js";
 
@@ -34,7 +34,7 @@ export function liveArguments(mode: Mode) {
       throw new Error("Нужен HTTPS URL указанного музыкального сервиса.");
     }
   }
-  return { urls, service, browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? process.env.LAZY_REVERB_GECKODRIVER ?? resolve("dist/drivers/geckodriver") };
+  return { urls, service, browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? defaultDriver() };
 }
 
 export async function liveSession<T>(mode: Mode, options: { browser: string; driver: string }, run: (session: BrowserSession, id?: string) => Promise<T>): Promise<T> {

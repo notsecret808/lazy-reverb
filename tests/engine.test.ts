@@ -340,3 +340,12 @@ await test("DRM сохраняет исходный аудиопуть и дос
   assert.equal(player.playbackRate, 0.9);
   assert.equal(contexts.length, 0);
 });
+
+await test("connect сохраняет нативный результат для узлов из другого контекста JavaScript", () => {
+  const { Node } = fixture();
+  const other = fixture();
+  const context = new other.Context();
+  const source = new other.Node(context);
+  const target = new other.Node(context);
+  assert.equal(Node.prototype.connect.call(source, target), target);
+});

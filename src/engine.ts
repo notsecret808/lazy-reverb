@@ -201,7 +201,9 @@ interface Rack {
       return destination;
     }
     const result: unknown = Reflect.apply(nativeConnect, this, [destination, ...ports]);
-    if (result instanceof AudioNode) return result;
+    // Reflect.apply теряет тип перегрузки. Нативный метод возвращает узел или undefined.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    return result as AudioNode | undefined;
   }
   AudioNode.prototype.connect = connect;
   AudioNode.prototype.disconnect = function (...args: unknown[]) {

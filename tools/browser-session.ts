@@ -1,15 +1,21 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { remote } from "webdriverio";
 
 type Client = Awaited<ReturnType<typeof remote>>;
+
+export function defaultDriver(): string {
+  const local = fileURLToPath(new URL("../dist/drivers/geckodriver", import.meta.url));
+  return process.env.LAZY_REVERB_GECKODRIVER ?? (existsSync(local) ? local : "geckodriver");
+}
 
 export interface BrowserOptions {
   browser: string;

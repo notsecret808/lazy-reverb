@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { buildExtension, dist } from "./build.js";
-import { evaluate, withBrowser } from "./browser-session.js";
+import { defaultDriver, evaluate, withBrowser } from "./browser-session.js";
 import { assess, exitCodes, phases, readBudget, summarize } from "./performance-gate.js";
 import type { Phase, Sample } from "./performance-gate.js";
 import { browserPid, makeSampler, sampleDelta } from "./process-sampler.js";
@@ -207,6 +207,6 @@ if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ options: { browser: { type: "string" }, driver: { type: "string" }, help: { type: "boolean" } } });
   if (values.help) console.log("pnpm run check:perf [--browser /opt/zen/zen] [--driver /path/to/geckodriver]");
   else process.exitCode = await runPerformance(await buildExtension(), {
-    browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? process.env.LAZY_REVERB_GECKODRIVER ?? resolve("dist/drivers/geckodriver"),
+    browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? defaultDriver(),
   });
 }
