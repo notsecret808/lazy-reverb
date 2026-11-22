@@ -48,5 +48,20 @@ jobs:
           tar -xzf dist/ci-browser/geckodriver.tar.gz -C dist/ci-browser geckodriver
           dist/ci-browser/firefox/firefox --version
           dist/ci-browser/geckodriver --version
+      - name: Install virtual audio output dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends dbus-daemon pulseaudio pulseaudio-utils
       - name: Unit, native Firefox and ZIP checks
-        run: node --import tsx tools/test.ts ci --browser "$PWD/dist/ci-browser/firefox/firefox" --driver "$PWD/dist/ci-browser/geckodriver"
+        run: |
+          dbus-run-session -- bash -euc '
+            audio_dir=$(mktemp -d "$RUNNER_TEMP/audio.XXXXXX")
+            export PULSE_RUNTIME_PATH="$audio_dir"
+            export PULSE_SERVER="unix:$audio_dir/native"
+            pulseaudio -n --daemonize=yes --exit-idle-time=-1 --use-pid-file=no --fail=yes \
+              --load="module-native-protocol-unix socket=$audio_dir/native auth-cookie-enabled=no" \
+              --load="module-null-sink sink_name=lazy_reverb_ci rate=48000"
+            trap "pactl exit >/dev/null 2>&1 || true" EXIT
+            pactl set-default-sink lazy_reverb_ci
+            node --import tsx tools/test.ts ci --browser "$PWD/dist/ci-browser/firefox/firefox" --driver "$PWD/dist/ci-browser/geckodriver"
+          '
