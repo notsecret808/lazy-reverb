@@ -19,7 +19,7 @@
     "test:native": "node --import tsx --test --test-concurrency=1 tests/native/*.test.ts",
     "test:unit": "pnpm run build && node --expose-gc --import tsx --test tests/*.test.ts",
     "check": "pnpm run lint && pnpm run typecheck && python3 tools/test.py",
-    "check:perf": "pnpm run build && python3 tools/performance.py"
+    "check:perf": "node --import tsx tools/performance.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.4",
