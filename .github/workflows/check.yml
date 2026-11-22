@@ -34,7 +34,12 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           FALLBACK: origin/${{ github.event.repository.default_branch }}
-        run: pnpm run check:commits --base "$BASE" --head "$HEAD" --fallback "$FALLBACK"
+        run: |
+          # A force-push can make the previous tip unreachable from the fetched refs.
+          if [[ ! "$BASE" =~ ^0+$ ]] && ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$BASE"
+          fi
+          pnpm run check:commits --base "$BASE" --head "$HEAD" --fallback "$FALLBACK"
       - name: Install Firefox and GeckoDriver
         run: |
           mkdir -p dist/ci-browser
