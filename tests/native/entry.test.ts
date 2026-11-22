@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { evaluate, withBrowser } from "../../tools/browser-session.js";
@@ -36,6 +37,10 @@ await test("временное дополнение загружает MAIN и �
       assert.equal(await evaluate(client, context, `fetch(${JSON.stringify(denied)}).then(() => false, () => true)`), true);
       assert(routes.journal.some(row => row.url === denied && row.action === "abort"));
       assert(routes.journal.some(row => row.url === "https://www.youtube.com/tone.wav" && row.action === "local"));
+      if (process.env.LAZY_REVERB_SCREENSHOT) {
+        const { data } = await client.browsingContextCaptureScreenshot({ context: panel });
+        await writeFile(process.env.LAZY_REVERB_SCREENSHOT, Buffer.from(data, "base64"));
+      }
     } finally {
       await routes.verify();
     }

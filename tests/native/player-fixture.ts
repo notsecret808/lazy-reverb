@@ -15,6 +15,23 @@ player.loop = true; player.playbackRate = 1.25; player.preservesPitch = true;
 if (!hidden) document.body.append(player);
 if (hidden) {
   window.siteContext = new AudioContext();
+  const nativeOutput = siteContext.destination;
+  const observedOutput = siteContext.createGain();
+  const analyser = siteContext.createAnalyser();
+  // Place the analyser in the actual output path for this fixture.
+  Object.defineProperty(siteContext, 'destination', {value: observedOutput});
+  observedOutput.connect(analyser);
+  analyser.connect(nativeOutput);
+  window.outputPeak = () => {
+    const samples = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(samples);
+    return samples.reduce((peak, value) => Math.max(peak, Math.abs(value)), 0);
+  };
+  window.impulses = [];
+  const createConvolver = siteContext.createConvolver.bind(siteContext);
+  siteContext.createConvolver = () => {
+    const node = createConvolver(); window.impulses.push(node); return node;
+  };
   window.siteSource = siteContext.createMediaElementSource(player);
   siteSource.connect(siteContext.destination);
 }
