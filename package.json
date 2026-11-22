@@ -11,10 +11,11 @@
     "prepare": "node --import tsx tools/prepare-hooks.ts",
     "check:commit": "node --import tsx tools/check-commit.ts && pnpm run lint && pnpm run typecheck && pnpm run test:unit && python3 -m unittest discover -s tests -p test_performance_gate.py",
     "lint:commit": "commitlint",
-    "lint": "oxlint --type-aware --deny-warnings src tools *.config.ts",
+    "lint": "oxlint --type-aware --deny-warnings src tools tests/native *.config.ts",
     "typecheck": "tsc -p src/tsconfig.json && tsc -p tsconfig.json",
     "package": "python3 tools/package.py",
     "test": "playwright test",
+    "test:native": "node --import tsx --test --test-concurrency=1 tests/native/*.test.ts",
     "test:unit": "node --expose-gc --test tests/engine.test.cjs tests/popup.test.cjs",
     "check": "pnpm run lint && pnpm run typecheck && python3 tools/test.py",
     "check:perf": "python3 tools/performance.py --browser /opt/zen/zen"
