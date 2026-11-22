@@ -33,19 +33,21 @@ interface Rack {
   const siteSources = new WeakSet<HTMLMediaElement>();
   const racks = new WeakMap<AudioContext, Rack>();
   const rackRefs = new Set<WeakRef<AudioContext>>();
-  // Сохраняем методы до установки перехватчиков и передаём this при каждом вызове.
+  // Capture the native methods before installing wrappers and pass the original receiver.
   /* oxlint-disable typescript/unbound-method */
   const nativeConnect = AudioNode.prototype.connect;
   const nativeDisconnect = AudioNode.prototype.disconnect;
   const nativeCreateSource = AudioContext.prototype.createMediaElementSource;
   const nativePlay = HTMLMediaElement.prototype.play;
   /* oxlint-enable typescript/unbound-method */
+  const connectNode: (this: AudioNode, target: AudioNode) => AudioNode = nativeConnect;
+  const disconnectAll: (this: AudioNode) => void = nativeDisconnect;
   let mediaContext: AudioContext | undefined;
   let configured = false;
   let error = "";
 
   function connectNodes(source: AudioNode, target: AudioNode) {
-    Reflect.apply(nativeConnect, source, [target]);
+    connectNode.call(source, target);
   }
 
   function* rackEntries(): Generator<[AudioContext, Rack]> {
@@ -92,7 +94,7 @@ interface Rack {
     restoreMedia(element, record);
     const owned = ownedSources.get(element);
     if (owned?.connected) {
-      Reflect.apply(nativeDisconnect, owned.source, []);
+      disconnectAll.call(owned.source);
       owned.connected = false;
       const rack = racks.get(owned.context);
       if (rack) updateRack(owned.context, rack);
@@ -147,7 +149,7 @@ interface Rack {
       // Only our nodes are disconnected. The site's connections and context
       // remain intact; the disabled path is input -> dry -> destination.
       for (const node of [rack.input, rack.bass, rack.convolver, rack.wet]) {
-        if (node) Reflect.apply(nativeDisconnect, node, []);
+        if (node) disconnectAll.call(node);
       }
       let signal: AudioNode = rack.input;
       if (bassActive && rack.bass) {
@@ -195,13 +197,14 @@ interface Rack {
   function connect(this: AudioNode, destination: AudioNode, output?: number, input?: number): AudioNode;
   function connect(this: AudioNode, destination: AudioParam, output?: number): void;
   function connect(this: AudioNode, destination: AudioNode | AudioParam, ...ports: (number | undefined)[]): AudioNode | void {
+    // Forward the receiver and exact port arguments so Web Audio selects the overload.
     if (this.context instanceof AudioContext && destination === this.context.destination) {
       const rack = getRack(this.context);
       Reflect.apply(nativeConnect, this, [rack.input, ...ports]);
       return destination;
     }
     const result: unknown = Reflect.apply(nativeConnect, this, [destination, ...ports]);
-    // Reflect.apply теряет тип перегрузки. Нативный метод возвращает узел или undefined.
+    // The native overload returns the destination node or undefined for an AudioParam.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     return result as AudioNode | undefined;
   }
@@ -211,6 +214,7 @@ interface Rack {
       const rack = racks.get(this.context);
       if (rack) args[0] = rack.input;
     }
+    // The browser validates every disconnect overload, including malformed calls.
     Reflect.apply(nativeDisconnect, this, args);
   };
   AudioContext.prototype.createMediaElementSource = function (element) {
@@ -238,7 +242,7 @@ interface Rack {
 
   function resume(context: AudioContext, ownedPlayback = false) {
     if ((settings.enabled || ownedPlayback) && context.state === "suspended") {
-      context.resume().catch(() => { error = "Нажмите Play на странице, чтобы запустить обработку."; });
+      context.resume().catch(() => { error = "Press Play on the page to start processing."; });
     }
   }
 
@@ -259,7 +263,7 @@ interface Rack {
       resume(mediaContext);
     } catch {
       record.blocked = true;
-      error = "Не удалось подключить реверберацию к этому плееру.";
+      error = "Could not connect reverb to this player.";
     }
   }
 
@@ -301,7 +305,7 @@ interface Rack {
         resume(owned.context, true);
       } catch {
         record.blocked = true;
-        error = "Не удалось восстановить аудиопуть плеера.";
+        error = "Could not restore the player’s audio path.";
       }
     }
     applyMedia(element, record);

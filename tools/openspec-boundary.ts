@@ -27,6 +27,6 @@ export function verifyOpenSpecBoundary(...revisions: string[]): void {
     if (forbidden(path, entry[3])) blocked.push(Buffer.from(path, "latin1").toString("utf8"));
   }
   if (blocked.length) {
-    throw new Error(`Файлы OpenSpec должны храниться в lazy-reverb-plans. Запрещённые пути: ${blocked.map(path => JSON.stringify(path)).join(", ")}`);
+    throw new Error(`OpenSpec files belong in lazy-reverb-plans. Disallowed paths: ${blocked.map(path => JSON.stringify(path)).join(", ")}`);
   }
 }

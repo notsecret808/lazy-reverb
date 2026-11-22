@@ -7,7 +7,7 @@ function git(...args: string[]): string {
 }
 
 const { values } = parseArgs({ options: { base: { type: "string" }, head: { type: "string" }, fallback: { type: "string" } } });
-if (!values.head || !values.base) throw new Error("Проверка диапазона требует --base и --head");
+if (!values.head || !values.base) throw new Error("Checking a commit range requires --base and --head");
 const head = git("rev-parse", "--verify", "--end-of-options", `${values.head}^{commit}`);
 const base = /^0+$/.test(values.base)
   ? git("merge-base", head, values.fallback ?? "origin/main")

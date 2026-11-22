@@ -26,10 +26,10 @@ export function checkArguments(args: string[], mode: Mode): CheckOptions | undef
 }
 
 function child(command: string, args: string[], env = process.env): number {
-  console.log(`Проверка: ${command} ${args.join(" ")}`);
+  console.log(`Check: ${command} ${args.join(" ")}`);
   const result = spawnSync(command, args, { cwd: root, stdio: "inherit", env });
   if (result.error) throw result.error;
-  if (result.signal) throw new Error(`Проверка завершена сигналом ${result.signal}`);
+  if (result.signal) throw new Error(`Check terminated by signal ${result.signal}`);
   return result.status ?? 1;
 }
 
@@ -60,7 +60,7 @@ export async function runChecks(mode: Mode, options: CheckOptions): Promise<numb
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const [, , mode, ...args] = process.argv;
-  if (mode !== "check" && mode !== "unit" && mode !== "native" && mode !== "ci") throw new Error("Нужен режим check, unit, native или ci");
+  if (mode !== "check" && mode !== "unit" && mode !== "native" && mode !== "ci") throw new Error("Specify check, unit, native, or ci");
   const options = checkArguments(args, mode);
   if (options) process.exitCode = await runChecks(mode, options);
 }

@@ -27,10 +27,10 @@ export async function buildExtension(): Promise<string> {
     const popup = await readFile(join(staging, "popup.html"), "utf8");
     const knownFiles = new Set<string>([...extensionAssets, ...extensionScripts]);
     for (const match of manifest.matchAll(/"([^"\s]+\.(?:js|css|html|svg))"/g)) {
-      if (!knownFiles.has(match[1])) throw new Error(`Неизвестный файл в manifest.json: ${match[1]}`);
+      if (!knownFiles.has(match[1])) throw new Error(`Unknown file in manifest.json: ${match[1]}`);
     }
     for (const match of popup.matchAll(/(?:src|href)="([^"#]+)"/g)) {
-      if (!knownFiles.has(match[1])) throw new Error(`Неизвестный файл в popup.html: ${match[1]}`);
+      if (!knownFiles.has(match[1])) throw new Error(`Unknown file in popup.html: ${match[1]}`);
     }
     const output = join(dist, "firefox");
     await rm(output, { recursive: true, force: true });

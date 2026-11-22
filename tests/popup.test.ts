@@ -50,7 +50,7 @@ async function popup({ url = 'https://www.youtube.com/watch?v=test', preferences
     commands: {
       getAll: async () => [{ name: '_execute_action', shortcut }],
       update: async (command: { name: string; shortcut: string }) => {
-        if (failures.shortcut) { failures.shortcut = false; throw Error('Сочетание недоступно'); }
+        if (failures.shortcut) { failures.shortcut = false; throw Error('Shortcut unavailable'); }
         assert.equal(command.name, '_execute_action'); shortcut = command.shortcut;
       },
     },
@@ -60,7 +60,7 @@ async function popup({ url = 'https://www.youtube.com/watch?v=test', preferences
       const gate = gates.execute;
       delete gates.execute;
       await gate?.promise;
-      if (failures.injection) { failures.injection = false; throw Error('Вкладка недоступна'); }
+      if (failures.injection) { failures.injection = false; throw Error('Tab unavailable'); }
       if (unavailable) return [{ result: null }];
       const options = request.args[0];
       if (options) {
@@ -78,7 +78,7 @@ async function popup({ url = 'https://www.youtube.com/watch?v=test', preferences
         const gate = gates.storage;
         delete gates.storage;
         await gate?.promise;
-        if (failures.storage) { failures.storage = false; throw Error('Не удалось сохранить настройки'); }
+        if (failures.storage) { failures.storage = false; throw Error('Could not save preferences'); }
         saves.push(data);
       },
     } },
@@ -98,7 +98,7 @@ await test('unsupported protocols and lookalike hosts never receive injected cod
     const { elements, calls } = await popup({ url });
     assert.equal(calls.length, 0, url);
     assert.equal(elements.enabled.disabled, true);
-    assert.match(elements.status.textContent, /Откройте YouTube или SoundCloud/);
+    assert.match(elements.status.textContent, /Open YouTube or SoundCloud/);
   }
 });
 
@@ -106,8 +106,8 @@ await test('old saved preferences load with bass off, and loading preferences do
   const { state, elements } = await popup({ configured: false, preferences: { rate: 0.8, mix: 0.4 } });
   assert.equal(state().rate, 0.8); assert.equal(state().mix, 0.4); assert.equal(state().bass, 0);
   assert.equal(state().enabled, false); assert.equal(elements.enabled.disabled, false);
-  assert.equal(elements['rate-value'].value, '0,80×');
-  assert.equal(elements['bass-value'].value, '0 дБ');
+  assert.equal(elements['rate-value'].value, '0.80×');
+  assert.equal(elements['bass-value'].value, '0 dB');
 });
 
 await test('rapid slider input applies and saves the final combination without replaying stale values', async () => {
@@ -122,7 +122,7 @@ await test('rapid slider input applies and saves the final combination without r
   assert.equal(state().bass, 6); assert.equal(state().rate, 0.66); assert.equal(state().mix, 0.2);
   assert.equal(saves.length, 1); assert.equal(saves[0].preferences.bass, 6);
   assert.equal(calls[1].world, 'MAIN'); assert.equal(calls[1].target.tabId, 42);
-  assert.equal(elements['bass-value'].value, '+6 дБ');
+  assert.equal(elements['bass-value'].value, '+6 dB');
 });
 
 await test('presets turn the effect on and preserve the separately chosen bass level', async () => {
@@ -135,24 +135,24 @@ await test('presets turn the effect on and preserve the separately chosen bass l
 await test('missing engine explains that the page needs refreshing, with controls disabled', async () => {
   const { elements } = await popup({ unavailable: true });
   assert.equal(elements.enabled.disabled, true);
-  assert.match(elements.status.textContent, /Обновите страницу/);
+  assert.match(elements.status.textContent, /Reload the page/);
 });
 
 await test('a failed injection does not poison the update queue or save unapplied settings', async () => {
   const { elements, failures, saves, state } = await popup();
   elements.rate.value = '0.7'; elements.mix.value = '0.3'; elements.bass.value = '4'; elements.enabled.checked = true;
   failures.injection = true; elements.bass.events.input(); await settle();
-  assert.equal(saves.length, 0); assert.match(elements.status.textContent, /Вкладка недоступна/);
+  assert.equal(saves.length, 0); assert.match(elements.status.textContent, /Tab unavailable/);
   elements.bass.value = '5'; elements.bass.events.input(); await settle();
   assert.equal(state().bass, 5); assert.equal(saves.length, 1);
-  assert.match(elements.status.textContent, /Эффект включён/);
+  assert.match(elements.status.textContent, /Effects are on/);
 });
 
 await test('a storage failure is visible and subsequent updates can still be saved', async () => {
   const { elements, failures, saves, state } = await popup();
   elements.rate.value = '0.9'; elements.mix.value = '0'; elements.bass.value = '6'; elements.enabled.checked = true;
   failures.storage = true; elements.bass.events.input(); await settle();
-  assert.equal(state().bass, 6); assert.match(elements.status.textContent, /Не удалось сохранить/);
+  assert.equal(state().bass, 6); assert.match(elements.status.textContent, /Could not save/);
   elements.bass.value = '7'; elements.bass.events.input(); await settle();
   assert.equal(saves.length, 1); assert.equal(saves[0].preferences.bass, 7);
 });
@@ -167,13 +167,13 @@ await test('the actual registered shortcut is shown and can be reassigned even o
 
 await test('unassigned shortcuts and binding errors are visible without disrupting media controls', async () => {
   const { elements, failures } = await popup({ shortcut: '' });
-  assert.match(elements.shortcut.textContent, /не назначена/);
+  assert.match(elements.shortcut.textContent, /No keyboard shortcut assigned/);
   failures.shortcut = true; elements['shortcut-reset'].events.click(); await settle();
-  assert.match(elements.shortcut.textContent, /Сочетание недоступно/);
+  assert.match(elements.shortcut.textContent, /Shortcut unavailable/);
   assert.equal(elements.enabled.disabled, false);
 });
 
-await test("при отложенном вызове движка устаревший отказ не обновляет UI и не записывает настройки", async () => {
+await test("a superseded engine request failure leaves the UI and stored preferences alone", async () => {
   const { gates, elements, saves, state } = await popup();
   const pending = deferred();
   const next = deferred();
@@ -186,18 +186,18 @@ await test("при отложенном вызове движка устарев
   gates.execute = next;
   elements.bass.value = "7";
   elements.bass.events.input();
-  pending.reject(new Error("устаревший отказ"));
+  pending.reject(new Error("superseded request failure"));
   await settle();
-  assert.doesNotMatch(elements.status.textContent, /устаревший отказ/);
+  assert.doesNotMatch(elements.status.textContent, /superseded request failure/);
   assert.equal(saves.length, 0);
   next.resolve();
   await settle();
   assert.equal(state().bass, 7);
   assert.equal(saves[0].preferences.bass, 7);
-  assert.equal(elements["bass-value"].value, "+7 дБ");
+  assert.equal(elements["bass-value"].value, "+7 dB");
 });
 
-await test("новый ввод во время записи сериализуется и переживает отказ хранилища", async () => {
+await test("new input queues behind a write and survives a storage failure", async () => {
   const { gates, elements, saves, state } = await popup();
   const saving = deferred();
   gates.storage = saving;
@@ -212,9 +212,9 @@ await test("новый ввод во время записи сериализу�
   elements.bass.events.input();
   await settle();
   assert.equal(state().bass, 2);
-  saving.reject(new Error("ошибка прежней записи"));
+  saving.reject(new Error("earlier write failure"));
   await settle();
   assert.equal(state().bass, 9);
   assert.deepEqual(saves.map(item => item.preferences.bass), [9]);
-  assert.equal(elements["bass-value"].value, "+9 дБ");
+  assert.equal(elements["bass-value"].value, "+9 dB");
 });

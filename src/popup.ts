@@ -2,7 +2,7 @@ import type { EffectSettings, EffectState } from "./engine-api";
 
 function control<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
-  if (!element) throw new Error(`Не найден элемент панели ${selector}`);
+  if (!element) throw new Error(`Popup element not found ${selector}`);
   return element;
 }
 
@@ -10,18 +10,25 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const stateFields = Object.entries({
+  enabled: "boolean",
+  configured: "boolean",
+  suspended: "boolean",
+  error: "string",
+  mediaCount: "number",
+  graphCount: "number",
+  blockedCount: "number",
+  rate: "number",
+  mix: "number",
+  bass: "number",
+} satisfies Record<keyof EffectState, "boolean" | "string" | "number">);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function isState(value: unknown): value is EffectState {
-  return typeof value === "object" && value !== null
-    && "enabled" in value && typeof value.enabled === "boolean"
-    && "configured" in value && typeof value.configured === "boolean"
-    && "suspended" in value && typeof value.suspended === "boolean"
-    && "error" in value && typeof value.error === "string"
-    && "mediaCount" in value && typeof value.mediaCount === "number"
-    && "graphCount" in value && typeof value.graphCount === "number"
-    && "blockedCount" in value && typeof value.blockedCount === "number"
-    && "rate" in value && typeof value.rate === "number"
-    && "mix" in value && typeof value.mix === "number"
-    && "bass" in value && typeof value.bass === "number";
+  return isRecord(value) && stateFields.every(([key, type]) => typeof value[key] === type);
 }
 
 const enabled = control<HTMLInputElement>("#enabled");
@@ -40,9 +47,9 @@ async function showShortcut() {
   try {
     const commands = await browser.commands.getAll();
     const shortcut = commands.find(command => command.name === "_execute_action")?.shortcut;
-    shortcutLabel.textContent = shortcut ? `${shortcut} — открыть панель` : "Горячая клавиша не назначена";
+    shortcutLabel.textContent = shortcut ? `${shortcut} — open the popup` : "No keyboard shortcut assigned";
   } catch {
-    shortcutLabel.textContent = "Не удалось прочитать горячую клавишу";
+    shortcutLabel.textContent = "Could not read the keyboard shortcut";
   }
 }
 
@@ -50,7 +57,7 @@ async function resetShortcut() {
   try {
     await browser.commands.update({ name: "_execute_action", shortcut: "Ctrl+Shift+F8" });
     await showShortcut();
-  } catch (error) { shortcutLabel.textContent = `Не удалось назначить: ${message(error)}`; }
+  } catch (error) { shortcutLabel.textContent = `Could not assign the keyboard shortcut: ${message(error)}`; }
 }
 shortcutReset.addEventListener("click", () => { resetShortcut().catch(error => { shortcutLabel.textContent = message(error); }); });
 showShortcut().catch(error => { shortcutLabel.textContent = message(error); });
@@ -64,16 +71,16 @@ function preferencesInput(value: object): Partial<EffectSettings> {
 }
 
 function labels() {
-  control<HTMLOutputElement>("#rate-value").value = `${Number(rate.value).toLocaleString("ru-RU", { minimumFractionDigits: 2 })}×`;
+  control<HTMLOutputElement>("#rate-value").value = `${Number(rate.value).toLocaleString("en-US", { minimumFractionDigits: 2 })}×`;
   control<HTMLOutputElement>("#mix-value").value = `${Math.round(Number(mix.value) * 100)} %`;
-  control<HTMLOutputElement>("#bass-value").value = `${Number(bass.value) > 0 ? "+" : ""}${Number(bass.value)} дБ`;
+  control<HTMLOutputElement>("#bass-value").value = `${Number(bass.value) > 0 ? "+" : ""}${Number(bass.value)} dB`;
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-rate]")) {
     button.setAttribute("aria-pressed", String(Number(button.dataset.rate) === Number(rate.value) && Number(button.dataset.mix) === Number(mix.value)));
   }
 }
 
 async function engine(options?: Partial<EffectSettings>): Promise<EffectState> {
-  if (tabId === undefined) throw new Error("Не найдена активная вкладка.");
+  if (tabId === undefined) throw new Error("No active tab found.");
   const [result] = await browser.scripting.executeScript({
     target: { tabId }, world: "MAIN",
     func: (options: unknown) => {
@@ -82,17 +89,17 @@ async function engine(options?: Partial<EffectSettings>): Promise<EffectState> {
     }, args: [options ?? null]
   });
   const state: unknown = result?.result;
-  if (!isState(state)) throw new Error("Обновите страницу после установки расширения.");
+  if (!isState(state)) throw new Error("Reload the page after installing the extension.");
   return state;
 }
 
 function show(state: EffectState) {
-  if (!state.enabled) status.textContent = "Эффект выключен. Исходная скорость и тон восстановлены.";
+  if (!state.enabled) status.textContent = "Effects are off. Original speed and pitch settings restored.";
   else if (state.error) status.textContent = state.error;
-  else if (state.suspended) status.textContent = "Нажмите Play или щёлкните по странице, чтобы запустить обработку.";
-  else if (state.blockedCount) status.textContent = "Скорость изменена. Для части плееров реверберация и бас-буст недоступны из-за защиты аудио.";
-  else if (!state.mediaCount && !state.graphCount) status.textContent = "Настройки готовы. Включите трек или видео на странице.";
-  else status.textContent = "Эффект включён в этой вкладке.";
+  else if (state.suspended) status.textContent = "Press Play or click the page to start processing.";
+  else if (state.blockedCount) status.textContent = "Speed changed. Reverb and bass boost are unavailable for some players due to audio protection.";
+  else if (!state.mediaCount && !state.graphCount) status.textContent = "Settings are ready. Play a track or video on the page.";
+  else status.textContent = "Effects are on in this tab.";
 }
 
 function update() {
@@ -125,7 +132,7 @@ async function initialize() {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     const url = new URL(tab?.url || "about:blank");
     if (url.protocol !== "https:" || !/^(?:[\w-]+\.)*youtube\.com$|^(?:www\.)?soundcloud\.com$/.test(url.hostname)) {
-      status.textContent = "Откройте YouTube или SoundCloud, чтобы включить эффект.";
+      status.textContent = "Open YouTube or SoundCloud to enable effects.";
       return;
     }
     tabId = tab?.id;

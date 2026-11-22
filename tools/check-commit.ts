@@ -6,7 +6,7 @@ verifyOpenSpecBoundary("--cached");
 
 const expectedNode = readFileSync(new URL("../.nvmrc", import.meta.url), "utf8").trim();
 if (process.versions.node !== expectedNode) {
-  throw new Error(`Требуется Node ${expectedNode}, запустите nvm use.`);
+  throw new Error(`Node ${expectedNode} is required. Run nvm use.`);
 }
 
 const unstaged = execFileSync("git", ["diff", "--name-only", "-z"], { encoding: "utf8" });
@@ -14,5 +14,5 @@ const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standa
 const files = [...unstaged.split("\0"), ...untracked.split("\0")];
 const unchecked = files.filter(path => /^(?:src|tests|tools|\.husky|\.github)\/|\.(?:[cm]?[jt]s|json|ya?ml|css|html|svg)$|^\.(?:gitignore|nvmrc|npmrc)$/.test(path));
 if (unchecked.length) {
-  throw new Error(`Проверка коммита требует совпадения кода и конфигурации с индексом. Изменения вне индекса: ${unchecked.map(path => JSON.stringify(path)).join(", ")}`);
+  throw new Error(`Commit checks require source and configuration to match the Git index. Unstaged changes: ${unchecked.map(path => JSON.stringify(path)).join(", ")}`);
 }

@@ -14,12 +14,12 @@ function report() {
   ] };
 }
 
-await test("стабильный отчёт проходит и сохраняет коды выхода", () => {
+await test("a stable report passes and preserves the exit codes", () => {
   assert.equal(assess(report(), budget).status, "pass");
   assert.deepEqual(exitCodes, { pass: 0, fail: 1, inconclusive: 2 });
 });
 
-await test("границы бюджета выключенного режима, активного DSP и памяти", () => {
+await test("budget boundaries for bypass, active DSP, and memory", () => {
   const input = report();
   input.results[3] = row("disabled_after_use", 16, 464);
   input.results[2] = row("enabled", 31, 464);
@@ -35,7 +35,7 @@ await test("границы бюджета выключенного режима,
   assert.match(assess(input, budget).reasons.join(), /Memory budget exceeded: native_after/);
 });
 
-await test("дрейф фаз и шум центральных проб дают inconclusive, единичный выброс переносится", () => {
+await test("phase drift and central sample noise are inconclusive, while one outlier is tolerated", () => {
   const input = report();
   input.results[5] = row("native_after", 30, 405);
   assert.match(assess(input, budget).reasons.join(), /baseline.*drift/i);
@@ -47,7 +47,7 @@ await test("дрейф фаз и шум центральных проб дают
   assert.equal(assess(input, budget).status, "pass");
 });
 
-await test("неполные, противоречивые и нечисловые отчёты отвергаются", () => {
+await test("incomplete, inconsistent, and nonnumeric reports are rejected", () => {
   for (const bad of [NaN, Infinity, "12", null, undefined, -1]) {
     for (const field of ["cpu_percent_one_core", "pss_mib", "interval_seconds"]) {
       const input = report();
@@ -70,7 +70,7 @@ await test("неполные, противоречивые и нечисловы
   }
 });
 
-await test("PSS агрегируется медианой четырёх проб", () => {
+await test("PSS is the median of four samples", () => {
   const samples = [301, 410, 415, 900].map(pss_mib => ({ pss_mib, cpu_percent_one_core: 10, interval_seconds: 3 }));
   assert.equal(summarize(samples).pss_mib, 412.5);
 });

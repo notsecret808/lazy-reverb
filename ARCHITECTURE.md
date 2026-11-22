@@ -1,65 +1,65 @@
-# Архитектура Lazy Reverb
+# Lazy Reverb architecture
 
-## Поток управления
+## Control flow
 
 ```mermaid
 flowchart LR
-  UI[Панель расширения] -->|scripting.executeScript, MAIN| API[window.__lazyReverb]
-  UI <-->|storage.local| Preferences[Локальные настройки]
-  API --> Media[Скорость и тон медиаплееров]
-  API --> Rack[Аудиограф текущей страницы]
-  Rack --> Native[Нативный Web Audio]
+  UI[Extension popup] -->|scripting.executeScript, MAIN| API[window.__lazyReverb]
+  UI <-->|storage.local| Preferences[Local preferences]
+  API --> Media[Media playback rate and pitch]
+  API --> Rack[Audio graph in the current page]
+  Rack --> Native[Native Web Audio]
 ```
 
-`manifest.json` ограничивает сайты и загружает `engine.js` в `MAIN` на `document_start`. Это позволяет обнаружить скрытые плееры и соединения Web Audio, которые сайт создаёт при запуске. Фонового скрипта нет.
+`manifest.json` limits the supported sites and loads the engine in `MAIN` at `document_start`. This lets the engine see detached players and Web Audio connections created during page startup. There is no background script.
 
-`popup.js` проверяет адрес активной вкладки и передаёт параметры через `browser.scripting.executeScript`. Очередь с номером ревизии пропускает устаревшие изменения ползунков. Применённые параметры сохраняются в `storage.local`; включение не переносится в новые вкладки. `browser.commands` показывает и переназначает фактическую горячую клавишу панели.
+`src/popup.ts` checks the active tab's URL and sends settings through `browser.scripting.executeScript`. A revision counter in the queue skips obsolete slider changes. The popup stores the applied preferences in `storage.local`. Each page keeps its own enabled flag. `browser.commands` reads and assigns the popup shortcut.
 
-Странице доступен только `window.__lazyReverb.get()/set()` для её собственного эффекта. Движок повторно проверяет типы и диапазоны параметров. API расширений, хранилище и разрешения остаются в панели.
+The page can call `window.__lazyReverb.get()/set()` for its own effects. The engine validates input types and ranges. Extension APIs, storage, and permissions stay in the popup.
 
-## Аудиограф
+## Audio graph
 
-Для обычного HTML-плеера скорость меняется через `playbackRate`, а изменение тона включается через `preservesPitch = false`. При необходимости DSP движок создаёт один `MediaElementAudioSourceNode`. Для графа сайта перехватываются конечные соединения с `AudioContext.destination`; промежуточные соединения не меняются. Один rack обслуживает один контекст.
+For an ordinary HTML player, the engine sets `playbackRate` and uses `preservesPitch = false` to let pitch follow speed. It creates one `MediaElementAudioSourceNode` when DSP is needed. For a site-owned graph, the engine intercepts final connections to `AudioContext.destination` and preserves the intermediate connections. Each context gets one effects rack.
 
 ```mermaid
 flowchart LR
-  Source[Источник] --> Input[input]
-  Input --> Bass[Бас: lowshelf 200 Гц]
-  Bass --> Dry[dry gain: 1 − mix]
-  Bass --> Convolver[Свёртка: стереоимпульс 2,8 с]
-  Convolver --> Wet[wet gain: mix]
+  Source[Source] --> Input[Input]
+  Input --> Bass[Low-shelf filter at 200 Hz]
+  Bass --> Dry[Dry gain = 1 − mix]
+  Bass --> Convolver[Stereo convolution, 2.8 s impulse]
+  Convolver --> Wet[Wet gain = mix]
   Dry --> Output[destination]
   Wet --> Output
 ```
 
-При басе 0 дБ фильтр обходится. При реверберации 0 % ветка свёртки отсоединена, `buffer = null`. Узлы создаются лениво и повторно используются; перестройка соединений нужна только при включении или выключении ветки. Изменения усиления сглаживаются через `setTargetAtTime`.
+At 0 dB bass, the graph bypasses the filter. At 0% reverb, it disconnects the convolution branch and clears the buffer. The engine creates nodes on demand, reuses them, and rewires the graph only when a branch is enabled or disabled. Gain changes use `setTargetAtTime` for smoothing.
 
-Бас усиливается без автоматического ослабления сигнала. На громком исходнике возможен клиппинг; отдельного дисторшна или компрессора нет. При выключении эффектов остаётся `input → dry → destination` с единичным усилением.
+Bass boost applies without automatic gain compensation. Loud signals may clip. The output has no added distortion stage or compressor. Turning the effects off leaves `input → dry → destination` at unity gain.
 
-## Обнаружение и владение ресурсами
+## Discovery and resource ownership
 
-- `play()`, события `play`, `loadedmetadata` и `ratechange` обнаруживают плееры и поддерживают выбранную скорость. Поиск DOM выполняется при включении, без polling и глобального наблюдателя.
-- `WeakMap` хранит метаданные плееров и rack. Наборы `WeakRef` позволяют перечислять живые записи и удалять пустые ссылки, не удерживая объекты от сборки мусора.
-- Остановленный и отсоединённый от DOM плеер выходит из активного реестра. Его исходные скорость и тон восстанавливаются; собственный источник расширения отсоединяется. Играющий скрытый плеер сохраняется.
-- Слабые метаданные собственного источника позволяют восстановить соединение при повторном `play()`, даже если эффекты уже выключены. Повторное создание источника для того же HTML-элемента запрещено браузером.
-- Сайт владеет своими источниками и контекстами. Очистка расширения не закрывает их и не разрушает их соединения. Один собственный `mediaContext` сохраняется до перезагрузки страницы, чтобы захваченные плееры не теряли звук.
+- The `play()` wrapper and the `play`, `loadedmetadata`, and `ratechange` events discover players and maintain the selected speed. A DOM scan runs on enable. There is no polling or global observer.
+- `WeakMap` holds player and rack metadata. Sets of `WeakRef` let the engine iterate live records and drop empty entries without preventing garbage collection.
+- A paused player detached from the DOM leaves the active registry. The engine restores its original rate and pitch and disconnects any extension-owned source. A detached player that is still playing stays registered.
+- Weak metadata lets a later `play()` reconnect an extension-owned source, including in bypass. The browser allows one source node per HTML media element.
+- Sites own their sources and contexts. Cleanup preserves them and their connections. The extension retains one `mediaContext` until page reload so routed players keep their audio.
 
-## Границы совместимости
+## Compatibility
 
-Перед захватом HTML-плеера проверяются DRM и происхождение потока. Поток без CORS остаётся на исходном пути со сменой скорости. `OfflineAudioContext` не перехватывается. Соединение и отсоединение `destination` перенаправляются согласованно.
+The engine checks DRM and stream origin before routing HTML players into Web Audio. Streams without CORS stay on their original route with rate control available. The hooks leave `OfflineAudioContext` alone and redirect both connection and disconnection of `destination` consistently.
 
-Удаление дополнения не выгружает код из уже открытого `MAIN`-контекста. После удаления, обновления или отключения дополнения музыкальную вкладку нужно обновить.
+An already loaded MAIN script stays in its document when the extension is removed, updated, or disabled. Reload music tabs to start a fresh document.
 
-## Где проверяется поведение
+## Verification
 
-| Уровень | Что доказывает |
+| Level | Coverage |
 | --- | --- |
-| Модульные тесты | Проверка параметров, очередь UI, владение ресурсами, сборка мусора, отсутствие роста графа |
-| Нативные сценарии WebdriverIO | Установка ZIP, автоматический `MAIN` bootstrap, реальные `storage`, `scripting` и `commands`, изоляция вкладок, SPA, ограничения CORS и управление с клавиатуры в Firefox 159 и Zen 1.24.3b |
-| Нативная проверка сигнала | Измерительный узел включён прямо в выходную цепь скрытого тестового плеера. Проверяются dry, усиление баса, хвост wet, освобождение импульса и восстановление исходного сигнала |
-| Локальный performance-гейт | CPU/PSS синтетического DSP и возврат после выключения с контролем шума |
-| Ручная проверка | Нажатие хоткея на рабочем столе, звук и совместимость с текущими плеерами сервисов |
+| Unit tests | Parameter validation, UI queue, resource ownership, garbage collection, and graph size |
+| Native WebdriverIO scenarios | ZIP installation, automatic MAIN startup, real `storage`, `scripting`, and `commands`, tab isolation, SPA changes, CORS, and keyboard controls in Firefox 159 and Zen 1.24.3b |
+| Native signal check | Measures the output path of the detached test player and verifies dry output, bass gain, wet tail, impulse release, and restoration of the original signal |
+| Local performance gate | Synthetic DSP CPU/PSS and post-bypass measurements with noise detection |
+| Manual checks | Physical shortcut, audio, and compatibility with current service players |
 
-GeckoDriver поднимает отдельный временный профиль. BiDi подставляет локальные HTML и WAV до навигации и прерывает остальные HTTP(S)-запросы. Музыкальная вкладка создаётся явно: стартовая вкладка Zen может отсутствовать в `tabs.query`. GeckoDriver загружает документ установленной панели в фоновую вкладку, а BiDi обращается к её контексту. Открытие панели через значок и физическое сочетание проверяются вручную.
+GeckoDriver launches a temporary browser profile. BiDi serves local HTML and WAV and aborts other HTTP(S) requests before navigation. Tests explicitly create the music tab because Zen's startup tab may be absent from `tabs.query`. GeckoDriver loads the installed popup document in a background tab, and BiDi addresses its context. Opening the popup from the toolbar and pressing the physical shortcut are manual checks.
 
-DSP-стенд использует отдельный тестовый маршрут с одним контекстом и источником. Через BiDi проверяются часы, сигнал и активность эффектов до и после каждой фазы. Linux sampler отслеживает PID и время запуска браузера и потомков. Сырые CPU/PSS-пробы проверяются до сравнения с бюджетами. В методике 2 PSS фазы берётся как медиана четырёх проб. CI использует числовые фикстуры. Измерение Zen выполняется локально и не охватывает HTML-декодирование или нагрузку сервисов.
+The DSP fixture uses one context and source. BiDi checks the clock, signal, and effect activity before and after each phase. The Linux sampler tracks the browser and its descendants by PID and start time. The gate validates raw CPU/PSS samples before comparing them with the budgets. In method 2, phase PSS is the median of four samples. CI uses numeric fixtures. The local Zen measurement excludes HTML decoding and full service-page load.

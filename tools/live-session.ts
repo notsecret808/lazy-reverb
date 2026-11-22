@@ -24,14 +24,14 @@ export function liveArguments(mode: Mode) {
     return undefined;
   }
   const urls = typeof values.url === "string" ? [values.url] : values.url ?? [];
-  if (!urls.length) throw new Error("Для сетевой диагностики требуется явный --url.");
+  if (!urls.length) throw new Error("Live diagnostics require an explicit --url.");
   const service = values.service;
-  if (mode === "perf" && service !== "youtube" && service !== "soundcloud") throw new Error("Укажите --service youtube или --service soundcloud.");
+  if (mode === "perf" && service !== "youtube" && service !== "soundcloud") throw new Error("Specify --service youtube or --service soundcloud.");
   for (const value of urls) {
     const url = new URL(value);
     const allowed = mode === "control" ? ["youtube"] : service === "youtube" || service === "soundcloud" ? [service] : ["youtube", "soundcloud"];
     if (url.protocol !== "https:" || !allowed.some(name => (name === "youtube" || name === "soundcloud") && matches(url, name))) {
-      throw new Error("Нужен HTTPS URL указанного музыкального сервиса.");
+      throw new Error("Provide an HTTPS URL for the selected music service.");
     }
   }
   return { urls, service, browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? defaultDriver() };
@@ -63,5 +63,5 @@ export async function liveReport(file: string, value: unknown): Promise<void> {
   await mkdir(dist, { recursive: true });
   const output = join(dist, file);
   await writeFile(output, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  console.log(`Локальный отчёт ${output}`);
+  console.log(`Local report ${output}`);
 }

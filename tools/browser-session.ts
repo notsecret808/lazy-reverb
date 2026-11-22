@@ -59,7 +59,7 @@ async function openPanel(client: Client, player: string, extensionId: string): P
     await client.setMozContext("content");
   }
   await client.waitUntil(async () => await evaluate(client, context, "Boolean(document.querySelector('#status') && globalThis.browser)"), {
-    timeout: 5000, timeoutMsg: "Не загрузился документ установленной панели",
+    timeout: 5000, timeoutMsg: "The installed popup document did not load",
   });
   return context;
 }
@@ -84,8 +84,8 @@ export async function withBrowser<T>(options: BrowserOptions, run: (session: Bro
         if (match) resolve(Number(match[1]));
       });
       driver.stderr.on("data", (bytes: Buffer) => appendFileSync(driverLog, bytes));
-      exited.then(() => reject(new Error("GeckoDriver завершился до открытия порта")), reject).catch(reject);
-      AbortSignal.timeout(5000).addEventListener("abort", () => reject(new Error("GeckoDriver не открыл порт")), { once: true });
+      exited.then(() => reject(new Error("GeckoDriver exited before opening its port")), reject).catch(reject);
+      AbortSignal.timeout(5000).addEventListener("abort", () => reject(new Error("GeckoDriver did not open its port")), { once: true });
     });
     client = await remote({
       hostname: "127.0.0.1", port, path: "/", logLevel: "warn", connectionRetryCount: 0, connectionRetryTimeout: 20_000,
@@ -108,18 +108,18 @@ export async function withBrowser<T>(options: BrowserOptions, run: (session: Bro
     connection.on("log.entryAdded", entry => appendFileSync(consoleLog, `${JSON.stringify(entry)}\n`));
     await writeFile(join(options.artifacts, "versions.json"), `${JSON.stringify(connection.capabilities, null, 2)}\n`);
     session = {
-      client: connection, artifacts: options.artifacts, step: "запуск сценария",
+      client: connection, artifacts: options.artifacts, step: "starting the scenario",
       async install(archive) { return connection.installAddOn((await readFile(archive)).toString("base64"), true); },
       openPanel(player, extensionId) { return openPanel(connection, player, extensionId); },
     };
     const lifetime = AbortSignal.timeout(options.timeout ?? 60_000);
     return await Promise.race([
       run(session),
-      exited.then(() => { throw new Error("GeckoDriver завершился во время сценария"); }),
-      once(lifetime, "abort").then(() => { throw new Error("Истёк таймаут нативного сценария"); }),
+      exited.then(() => { throw new Error("GeckoDriver exited during the scenario"); }),
+      once(lifetime, "abort").then(() => { throw new Error("Native scenario timed out"); }),
     ]);
   } catch (error) {
-    await writeFile(join(options.artifacts, "failure.txt"), `${session?.step ?? "запуск браузера"}\n${String(error)}\n`);
+    await writeFile(join(options.artifacts, "failure.txt"), `${session?.step ?? "starting the browser"}\n${String(error)}\n`);
     const context = session?.context;
     if (client && context) {
       const connection = client;

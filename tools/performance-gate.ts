@@ -37,11 +37,11 @@ export function median(values: number[]): number {
 
 export async function readBudget(): Promise<Budget> {
   const parsed: unknown = JSON.parse(await readFile(new URL("../performance-budget.json", import.meta.url), "utf8"));
-  if (!record(parsed)) throw new Error("Некорректный бюджет производительности");
+  if (!record(parsed)) throw new Error("Invalid performance budget");
   const data = parsed;
   function readLimit(name: typeof limits[number]) {
     const limit = data[name];
-    if (!nonNegative(limit)) throw new Error(`Некорректный лимит ${name}`);
+    if (!nonNegative(limit)) throw new Error(`Invalid limit ${name}`);
     return limit;
   }
   return {

@@ -35,7 +35,7 @@ function lab(session: BrowserSession, id: string) {
     async panel(context: string, supported = true) {
       const panel = await session.openPanel(context, id);
       session.context = panel;
-      const ready = supported ? "!document.querySelector('#enabled').disabled" : "document.querySelector('#status').textContent.includes('Откройте YouTube')";
+      const ready = supported ? "!document.querySelector('#enabled').disabled" : "document.querySelector('#status').textContent.includes('Open YouTube')";
       await wait(panel, ready);
       return panel;
     },
@@ -68,7 +68,7 @@ async function scenario(name: string, run: (fixture: ReturnType<typeof lab>, ses
   });
 }
 
-await test("панель управляет пресетом, клавиатурным вводом и сочетанием", async () => {
+await test("the popup handles presets, keyboard input, and the shortcut", async () => {
   await scenario("controls", async fixture => {
     const page = await fixture.player();
     await fixture.wait(page, "!__lazyReverb.get().enabled && player.playbackRate === 1.25 && player.preservesPitch && __lazyReverb.get().graphCount === 0");
@@ -78,7 +78,7 @@ await test("панель управляет пресетом, клавиатур
     await fixture.wait(page, "__lazyReverb.get().enabled && __lazyReverb.get().mix === 0.25 && player.playbackRate === 0.85 && !player.preservesPitch");
     await fixture.arrowRight(panel, "bass");
     await fixture.wait(page, "__lazyReverb.get().bass === 1");
-    assert.equal(await fixture.read(panel, "document.querySelector('#bass-value').value"), "+1 дБ");
+    assert.equal(await fixture.read(panel, "document.querySelector('#bass-value').value"), "+1 dB");
     await fixture.click(panel, "#enabled");
     await fixture.wait(page, "!__lazyReverb.get().enabled && player.playbackRate === 1.25 && player.preservesPitch && !player.paused");
     await fixture.read(panel, "browser.commands.reset('_execute_action')");
@@ -88,7 +88,7 @@ await test("панель управляет пресетом, клавиатур
   });
 });
 
-await test("последний ввод сохраняется, новые вкладки и перезагрузка начинают с bypass", async () => {
+await test("the latest input persists and new tabs and reloads start in bypass", async () => {
   await scenario("preferences", async (fixture, session) => {
     const first = await fixture.player();
     const firstPanel = await fixture.panel(first);
@@ -119,7 +119,7 @@ await test("последний ввод сохраняется, новые вк�
   });
 });
 
-await test("новый плеер SPA, диапазоны и режим одной скорости", async () => {
+await test("SPA player replacement, control limits, and speed-only mode", async () => {
   await scenario("spa-speed", async fixture => {
     const context = await fixture.player();
     const panel = await fixture.panel(context);
@@ -142,13 +142,13 @@ await test("новый плеер SPA, диапазоны и режим одно
   });
 });
 
-await test("без CORS остаётся скорость, неподдерживаемый URL не получает движок", async () => {
+await test("no CORS leaves speed controls available and unsupported URLs get no engine", async () => {
   await scenario("restricted-pages", async fixture => {
     const context = await fixture.player(`${youtube}?blocked=1`);
     const panel = await fixture.panel(context);
     await fixture.click(panel, 'button[data-rate="0.85"]');
     await fixture.wait(context, "__lazyReverb.get().blockedCount === 1 && __lazyReverb.get().graphCount === 0 && player.playbackRate === 0.85 && !player.paused");
-    await fixture.wait(panel, "document.querySelector('#status').textContent.includes('защиты аудио')");
+    await fixture.wait(panel, "document.querySelector('#status').textContent.includes('audio protection')");
     const unsupported = await fixture.player("https://unsupported.test/player");
     const unsupportedPanel = await fixture.panel(unsupported, false);
     assert.equal(await fixture.read(unsupported, "typeof __lazyReverb"), "undefined");
@@ -156,7 +156,7 @@ await test("без CORS остаётся скорость, неподдержи�
   });
 });
 
-await test("скрытый SoundCloud-граф выдаёт ненулевой dry, bass, wet и восстановленный bypass", async () => {
+await test("the hidden SoundCloud graph outputs audio in dry, bass, wet, and restored bypass modes", async () => {
   await scenario("audio-output", async fixture => {
     const page = await fixture.player(soundcloud);
     const peak = async () => {

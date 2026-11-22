@@ -9,13 +9,13 @@ import { extensionFiles } from "./extension-files.js";
 async function readVersion(path: string): Promise<string> {
   const data: unknown = JSON.parse(await readFile(path, "utf8"));
   if (typeof data !== "object" || data === null || !("version" in data) || typeof data.version !== "string"
-      || !/^\d+\.\d+\.\d+$/.test(data.version)) throw new Error(`Некорректная версия в ${path}`);
+      || !/^\d+\.\d+\.\d+$/.test(data.version)) throw new Error(`Invalid version in ${path}`);
   return data.version;
 }
 
 export async function packageExtension(runtime: string, destination?: string): Promise<string> {
   const version = await readVersion(join(runtime, "manifest.json"));
-  if (version !== await readVersion(join(root, "package.json"))) throw new Error("Версии manifest.json и package.json расходятся");
+  if (version !== await readVersion(join(root, "package.json"))) throw new Error("Versions in manifest.json and package.json differ");
   const output = destination ?? join(dist, `lazy-reverb-${version}.zip`);
   const files = await Promise.all(extensionFiles.map(async name => [name, await readFile(join(runtime, name))] as const));
   const archive = zipSync(Object.fromEntries(files));

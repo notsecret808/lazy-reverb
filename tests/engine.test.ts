@@ -331,7 +331,7 @@ await test('registry allows abandoned media and site contexts to be garbage coll
   assert.equal(api.get().mediaCount, 0); assert.equal(api.get().graphCount, 0);
 });
 
-await test("DRM сохраняет исходный аудиопуть и доступную скорость", () => {
+await test("DRM leaves the original audio route intact and allows speed changes", () => {
   const { api, elements, Media, contexts } = fixture();
   const player = new Media();
   player.mediaKeys = {};
@@ -341,7 +341,7 @@ await test("DRM сохраняет исходный аудиопуть и дос
   assert.equal(contexts.length, 0);
 });
 
-await test("connect сохраняет нативный результат для узлов из другого контекста JavaScript", () => {
+await test("connect preserves the native result for nodes from another JavaScript realm", () => {
   const { Node } = fixture();
   const other = fixture();
   const context = new other.Context();

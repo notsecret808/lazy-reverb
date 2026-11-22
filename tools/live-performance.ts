@@ -38,7 +38,7 @@ function record(value: unknown): value is Record<string, unknown> {
 function timeOf(value: unknown): number {
   if (!record(value) || value.ad !== false || !record(value.media) || value.media.paused !== false
     || typeof value.media.ready !== "number" || value.media.ready < 3 || typeof value.media.time !== "number") {
-    throw new Error("Живое воспроизведение не готово или изменилось во время измерения");
+    throw new Error("Live playback was unavailable or changed during measurement");
   }
   return value.media.time;
 }
@@ -68,7 +68,7 @@ async function prepare(session: BrowserSession, context: string, service: Servic
   await client.waitUntil(async () => {
     try { timeOf(await readLive(session, context, mediaState)); return true; }
     catch { return false; }
-  }, { timeout: 20_000, timeoutMsg: "Анонимное воспроизведение не началось" });
+  }, { timeout: 20_000, timeoutMsg: "Anonymous playback did not start" });
   if (service === "soundcloud") {
     await evaluate(client, context, `(() => {
       const media = window.__lrLiveProbe.media || document.querySelector('audio');
@@ -82,7 +82,7 @@ async function measure(session: BrowserSession, context: string, sampler: Return
   const initial = await readLive(session, context, mediaState);
   const start = timeOf(initial);
   if (mode === "enabled" && (!record(initial) || !record(initial.engine) || initial.engine.enabled !== true || initial.engine.suspended || initial.engine.blockedCount !== 0)) {
-    throw new Error("DSP на странице не включился");
+    throw new Error("DSP did not activate on the page");
   }
   await evaluate(session.client, context, "window.__lrLiveProbe.gaps.length=0; window.__lrLiveProbe.last=performance.now();");
   const samples = [];
@@ -94,7 +94,7 @@ async function measure(session: BrowserSession, context: string, sampler: Return
     before = after;
   }
   const state = await readLive(session, context, mediaState);
-  if (timeOf(state) - start < 5) throw new Error("Аудиочасы живой страницы не продвинулись");
+  if (timeOf(state) - start < 5) throw new Error("The live page’s audio clock did not advance");
   const rawGaps = await readLive(session, context, "window.__lrLiveProbe.gaps");
   const seenGaps: unknown[] = Array.isArray(rawGaps) ? rawGaps : [];
   const gaps = seenGaps.filter((item): item is number => typeof item === "number" && Number.isFinite(item)).sort((left, right) => left - right);
@@ -112,7 +112,7 @@ const options = liveArguments("perf");
 if (options && (options.service === "youtube" || options.service === "soundcloud")) {
   const { service, urls: [url] } = options;
   const result = await liveSession("perf", options, async (session, id) => {
-    if (!id) throw new Error("Расширение не установилось");
+    if (!id) throw new Error("The extension did not install");
     const { client } = session;
     const context = await openLive(session, url);
     const results = [];
@@ -138,7 +138,7 @@ if (options && (options.service === "youtube" || options.service === "soundcloud
           const {AddonManager} = ChromeUtils.importESModule('resource://gre/modules/AddonManager.sys.mjs');
           AddonManager.getAddonByID(id).then(async addon => { await addon.disable(); done(!addon.isActive); }).catch(() => done(false));
         `, [id]);
-        if (disabled !== true) throw new Error("Не удалось отключить дополнение");
+        if (disabled !== true) throw new Error("Could not disable the extension");
       } finally { await client.setMozContext("content"); }
       afterDisable = await readLive(session, context, mediaState);
       await client.browsingContextReload({ context, wait: "interactive" });
@@ -155,7 +155,7 @@ if (options && (options.service === "youtube" || options.service === "soundcloud
     }
   });
   await liveReport("performance-live.json", {
-    method: "Анонимное воспроизведение в отдельном профиле Zen. Четыре CPU/PSS-пробы по 3 с. Таймер 50 мс оценивает задержку основной нити для SoundCloud. Результат зависит от сети и состояния страницы.",
+    method: "Anonymous playback in a separate Zen profile. Four 3-second CPU/PSS samples. A 50 ms timer estimates main-thread delay for SoundCloud. Results depend on the network and page state.",
     sites: [result],
   });
   if (result.status === "incomplete") process.exitCode = 2;

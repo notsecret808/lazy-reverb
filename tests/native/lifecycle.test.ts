@@ -10,11 +10,11 @@ const driver = process.env.LAZY_REVERB_GECKODRIVER ?? resolve("dist/drivers/geck
 const artifactsRoot = process.env.LAZY_REVERB_ARTIFACTS ?? "dist/native";
 
 for (const reason of ["install", "exception", "timeout", "crash"] as const) {
-  await test(`сессия освобождает профиль при сбое ${reason}`, async () => {
+  await test(`the session cleans up its profile after ${reason}`, async () => {
     const artifacts = resolve(artifactsRoot, `cleanup-${reason}`);
     let profile: string | undefined;
     await assert.rejects(withBrowser({ browser, driver, artifacts, timeout: 8000 }, async session => {
-      session.step = `контролируемый сбой ${reason}`;
+      session.step = `controlled failure ${reason}`;
       const { client } = session;
       const capabilities: object = client.capabilities;
       assert("moz:profile" in capabilities && typeof capabilities["moz:profile"] === "string");
@@ -30,7 +30,7 @@ for (const reason of ["install", "exception", "timeout", "crash"] as const) {
           await session.install(invalidZip);
           break;
         }
-        case "exception": throw new Error("контрольное исключение");
+        case "exception": throw new Error("intentional exception");
         case "timeout": await delay(15_000, undefined, { ref: false }); break;
         case "crash": {
           assert("moz:processID" in capabilities && typeof capabilities["moz:processID"] === "number");
@@ -42,7 +42,7 @@ for (const reason of ["install", "exception", "timeout", "crash"] as const) {
         }
       }
     }));
-    assert(profile, "сессия должна открыть временный профиль перед контролируемым сбоем");
+    assert(profile, "the session must open a temporary profile before the controlled failure");
     await assert.rejects(access(profile), { code: "ENOENT" });
     await access(join(artifacts, "driver.log"));
     assert.match(await readFile(join(artifacts, "failure.txt"), "utf8"), new RegExp(reason));

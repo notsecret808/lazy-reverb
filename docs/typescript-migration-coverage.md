@@ -1,79 +1,79 @@
-# Карта проверок при переходе на TypeScript
+# TypeScript migration test coverage
 
-Движок сохраняет `window.__lazyReverb.get()/set()`, загрузку в `MAIN` на `document_start` и прежний DSP. Панель по-прежнему читает и пишет `storage.local.preferences` с полями `rate`, `mix` и `bass`, а переключатель обработки относится к конкретному документу. У старых настроек без `bass` значение по умолчанию — 0 дБ. Перенос хранилища не нужен. Для отката достаточно вернуть прежнюю сборку и обновить музыкальные вкладки после перезагрузки дополнения.
+The engine keeps `window.__lazyReverb.get()/set()`, `MAIN` injection at `document_start`, and the existing DSP. The popup still reads and writes `storage.local.preferences` with `rate`, `mix`, and `bass`. Each document keeps its own enabled flag. Old preferences without `bass` default to 0 dB. The storage format needs no migration. To roll back, load the previous build and refresh music tabs after reloading the extension.
 
-Строки в каждой таблице идут в порядке соответствующего исходного файла. Они задают ожидаемое покрытие после переноса.
+The rows follow the order of each original source file and describe the expected coverage after migration.
 
-## Движок — `tests/engine.test.cjs`
+## Engine (`tests/engine.test.cjs`)
 
-| Исходная проверка | Доказательство после переноса |
+| Original check | Coverage after migration |
 | --- | --- |
-| Выключенное состояние, тон и восстановление | Unit проверяет исходные `playbackRate` и `preservesPitch` после bypass. Нативный сценарий проверяет сигнал до и после. |
-| Внешний поток без CORS | Unit проверяет отсутствие захвата и перезагрузки при доступной скорости. E2E проверяет статус и ход воспроизведения. |
-| Скрытый `Audio` и единственный источник | Unit обнаруживает элемент через `play()` и отклоняет повторное создание источника. Нативная фикстура проверяет скрытый плеер. |
-| Переход от CORS-блокировки к графу сайта | Unit проверяет повторную оценку плеера при появлении источника сайта. |
-| Граф сайта и номера портов | Unit проверяет семантику `connect`/`disconnect`, единственный rack и сохранение промежуточных соединений. |
-| Смена плеера в SPA и сброс скорости | Unit проверяет `play`/`ratechange`, E2E — замену элемента и его собственные исходные настройки. |
-| Валидация, диапазоны, offline-граф | Unit проверяет типы параметров и исключение `OfflineAudioContext`. Отдельно проверить защиту DRM и CORS. |
-| Отсутствие фоновой работы, режим скорости | Unit проверяет сканирования, наблюдателей и количество узлов. |
-| Скорость без контекста и CORS-предупреждения | Unit и E2E проверяют `graphCount` и отсутствие ненужного контекста. |
-| Полочный фильтр и освобождение импульса | Unit проверяет путь без компенсации усиления, обход фильтра и `buffer = null`. Нативная проверка измеряет усиление и хвост свёртки. |
-| Повторные переключения и ползунки | Unit проверяет ограниченное число узлов и источников и отсутствие повторных поисков. |
-| Ускорение и полностью wet | Unit проверяет предельные значения, нулевой dry gain и восстановление. E2E использует реальные ползунки. |
-| Очистка остановленного элемента и повторный `play()` | Unit проверяет восстановление настроек, отсоединение собственного источника и его повторное подключение в bypass. |
-| Играющий скрытый элемент и владение сайтом | Unit проверяет сохранение скрытого плеера и соединений, созданных сайтом. |
-| Сборка мусора | Unit проверяет освобождение недостижимых объектов с обязательным `--expose-gc`. |
+| Disabled state, pitch, and restoration | Unit tests verify the original `playbackRate` and `preservesPitch` after bypass. A native scenario checks output before and after. |
+| Cross-origin stream without CORS | Unit tests check that rate control works without capturing or reloading the player. A native test checks the status and advancing playback. |
+| Detached `Audio` and a single source | Unit tests discover the player through `play()` and reject duplicate sources. The native fixture tests detached playback. |
+| Transition from CORS restriction to a site-owned graph | A unit test checks that the engine reassesses the player when the site creates its own source. |
+| Site graph and port indices | Unit tests verify `connect` and `disconnect` semantics, a single rack, and intermediate connections. |
+| SPA player replacement and rate reset | Unit tests cover `play` and `ratechange`. A native test checks the replacement element and its original settings. |
+| Validation, ranges, and offline graphs | Unit tests check settings types and the exclusion of `OfflineAudioContext`. DRM and CORS have separate coverage. |
+| No background work and rate-only mode | Unit tests check scans, observers, and node counts. |
+| Rate control without a context, and CORS warnings | Unit and native tests check `graphCount` and the absence of an unnecessary context. |
+| Low-shelf filter and impulse release | Unit tests cover the uncompensated gain path, filter bypass, and `buffer = null`. Native checks measure bass boost and the reverb tail. |
+| Repeated toggles and slider edits | Unit tests check that node and source counts stay bounded and scans do not repeat. |
+| Faster playback and 100% wet | Unit tests check ranges, zero dry gain, and restoration. Native cases use real sliders. |
+| Paused player cleanup and later `play()` | Unit tests check settings restoration and verify that the engine disconnects and reconnects its source in bypass. |
+| Detached active player and site ownership | Unit tests check that detached players and site-owned connections remain active. |
+| Garbage collection | A unit test checks that unreachable players and contexts are collectable using `--expose-gc`. |
 
-Во всех проверках маршрута проследить от источника до `destination`, включая `dry → destination`, wet-выход и обход фильтра. Удаление dry-соединения или освобождения импульса должно ломать соответствующую проверку. Нативная проверка совмещает топологию с ненулевым сигналом на основном маршруте.
+For routing assertions, follow the entire route to `destination`, including the dry and wet outputs and filter bypass. Removing the dry connection or impulse release should fail the corresponding test. The native check verifies both the topology and a nonzero signal on the main route.
 
-## Панель — `tests/popup.test.cjs`
+## Popup (`tests/popup.test.cjs`)
 
-| Исходная проверка | Доказательство после переноса |
+| Original check | Coverage after migration |
 | --- | --- |
-| Протоколы и похожие домены | Unit подтверждает отсутствие вызова `scripting` для неподходящей вкладки. |
-| Старые preferences | Unit загружает прежний формат с басом 0 дБ, оставляет обработку выключенной. |
-| Быстрый ввод | Unit с управляемыми Promise проверяет новое событие во время `executeScript` и `storage.set`, итог UI, движка и хранилища. |
-| Пресет включает эффект и сохраняет бас | Unit и E2E проверяют независимый бас и фактическое применение пресета. |
-| Движок недоступен | Unit проверяет подсказку и отключённые поля. Нативная отрицательная проверка подтверждает обнаружение отсутствующего bootstrap. |
-| Ошибка внедрения | Unit завершает старый запрос отказом после нового ввода, проверяет, что неприменённое состояние не сохраняется, а очередь продолжает работу. |
-| Ошибка хранилища | Unit отклоняет задержанную запись, проверяет сообщение об ошибке и успешное сохранение следующего состояния. |
-| Фактическая клавиша и переназначение | Unit и нативный сценарий проверяют `browser.commands` и показ результата на неподдерживаемой вкладке. |
-| Неназначенная клавиша и ошибка обновления | Unit имитирует оба ответа API и проверяет независимость аудиоконтролов. |
+| Protocols and look-alike domains | Unit tests verify that an unsupported tab triggers no `scripting` call. |
+| Old preferences | A unit test loads the previous shape with 0 dB bass, keeping effects off. |
+| Rapid input | Controlled promises hold `executeScript` and `storage.set` while new input arrives. The unit tests check the final UI, engine, and storage. |
+| Presets enable effects and preserve bass | Unit and native tests verify independent bass and actual preset application. |
+| Unavailable engine | A unit test checks the hint and disabled controls. A negative native check verifies missing bootstrap detection. |
+| Injection failure | A unit test rejects an obsolete request after new input and checks that the failed update is skipped and the queue continues. |
+| Storage failure | A unit test rejects a delayed write, checks the error message, and verifies that the next update persists. |
+| Actual shortcut and reassignment | Unit and native tests cover `browser.commands` and show the result on unsupported tabs. |
+| Unassigned shortcut and binding error | A unit test simulates both cases and verifies that audio controls remain independent. |
 
-## Вердикт — `tests/test_performance_gate.py`
+## Performance verdict (`tests/test_performance_gate.py`)
 
-| Исходная проверка | Доказательство после переноса |
+| Original check | Coverage after migration |
 | --- | --- |
-| Стабильный дешёвый прогон | Числовая фикстура с четырьмя сырыми пробами даёт `pass`. |
-| Нагрузка после выключения | Фикстура с согласованными CPU-пробами даёт `fail` за остаточную нагрузку. |
-| Бюджет включённого DSP | Фикстура проверяет границу и превышение +20 п.п. |
-| Бюджет удержанной памяти | Фикстура проверяет границу и превышение +64 МиБ относительно `native_before`. |
-| Память сохраняется в финальном контроле | Рост PSS после использования виден даже при столь же высоком `native_after`. |
-| Дрейф контрольных фаз | Превышение допустимого дрейфа даёт `inconclusive`. |
-| Высокий шум | Вариативность сырых проб даёт `inconclusive`. |
-| Единичный выброс | Стабильная медиана с одним выбросом остаётся пригодной при выполнении правил шума. |
-| Недоступная память или пропуск фазы | Частичный отчёт даёт `inconclusive` с причиной. |
+| Stable run with low overhead | Four raw samples give `pass`. |
+| Overhead after bypass | Consistent CPU samples give `fail` for residual overhead. |
+| Enabled DSP budget | Fixtures check the boundary and a result over +20 percentage points. |
+| Residual memory budget | Fixtures check the boundary and a result over +64 MiB against `native_before`. |
+| Memory retained in the final control | Post-use PSS growth remains visible when `native_after` is equally high. |
+| Control phase drift | Drift beyond tolerance produces `inconclusive`. |
+| High noise | Variation in the central samples produces `inconclusive`. |
+| Single outlier | A stable median remains usable if it passes the noise rules. |
+| Missing memory or phase | A partial report gives `inconclusive` with a reason. |
 
-Добавить fixtures для `NaN`, `Infinity`, строк, повторяющихся фаз, неверного числа проб, недопустимых интервалов, несогласованной сводки и неподтверждённого сигнала. Отдельные проверки sampler разбирают `/proc`, идентифицируют PID по времени запуска и выявляют исчезновение процессов, недоступный PSS и сброс счётчиков. Физический замер синтетического DSP остаётся отдельной локальной проверкой.
+Include fixtures for `NaN`, `Infinity`, strings, duplicate phases, invalid counts or intervals, summaries inconsistent with the samples, and unverified audio output. Separate sampler tests parse `/proc`, track PIDs by start time, and detect process loss, unavailable PSS, and counter resets. Physical measurements of synthetic DSP remain a separate local check.
 
-## Браузер — `tests/player.spec.cjs`
+## Browser (`tests/player.spec.cjs`)
 
-| Исходный сценарий | Доказательство после переноса с установленным ZIP |
+| Original scenario | Coverage after migration using the installed ZIP |
 | --- | --- |
-| Воспроизведение по умолчанию | Автоматический bootstrap в `MAIN`, выключенные эффекты и исходные параметры HTML-плеера. |
-| «Лениво» и выключение | Управление реальной панелью, изменение тона и скорости, затем bypass с исходным сигналом. |
-| Бас с клавиатуры | Стрелка на настоящем ползунке изменяет отображаемые дБ и состояние движка. |
-| Быстрые ползунки и повторное открытие | Последний ввод применяется через `scripting`, сохраняется и возвращается в панели. |
-| Preferences в новой вкладке | Реальный `storage.local` даёт прежние настройки, переключатель и обработка в новом документе выключены. |
-| Скрытый SoundCloud-плеер | Ранний захват соединения сайта при запуске страницы, единственный rack и сохранённый сигнал. |
-| Изоляция вкладок | Реальная активная вкладка выбирается в `tabs.query`, состояние другой страницы сохраняется. |
-| Замена плеера в SPA | Новый плеер получает настройки текущего документа, выключение возвращает его исходную скорость. |
-| Перезагрузка | Новый документ начинает выключенным, реальные предпочтения возвращаются при открытии панели. |
-| Поток без CORS | Локальный внешний origin без CORS, продвижение воспроизведения, только скорость и видимый статус. |
-| Только скорость | Нулевые бас и реверберация, работающая скорость и отсутствие аудиографа. |
-| Неподдерживаемый сайт | Нет bootstrap, панель показывает ограничение без активации эффекта. |
-| 2× и 100 % | Реальные ползунки, формат значений и восстановление скорости и тона. |
-| «Быстрее» | 1,25× при 0 % реверберации без лишнего графа. |
-| Сброс сочетания | Изменение через настоящее `browser.commands`, зарегистрированное сочетание и прежнее состояние плеера. |
+| Default playback | Automatic `MAIN` bootstrap, effects off, and the original player settings. |
+| Lazy preset and bypass | The real popup changes rate and pitch, then restores the original signal. |
+| Bass via keyboard | An arrow key on the slider updates the displayed dB and engine state. |
+| Rapid slider edits and reopening | The last value applies through `scripting`, persists, and appears again when the popup opens. |
+| Preferences in a new tab | Real `storage.local` returns the preferences while the toggle and effects start off. |
+| Detached SoundCloud player | Early interception of the site's connection, one rack, and continued audio output. |
+| Tab isolation | The real active tab is selected through `tabs.query` while the other page keeps its state. |
+| SPA player replacement | The replacement gets the current document's settings. Bypass restores its original rate. |
+| Reload | The new document starts in bypass. The real preferences appear when the popup opens. |
+| Stream without CORS | The local cross-origin stream stays audible, advances at the chosen rate, and shows the restriction. |
+| Rate only | Zero bass and reverb, working rate controls, and no audio graph. |
+| Unsupported site | No bootstrap. The popup shows which sites it supports and keeps effects off. |
+| 2× and 100% wet | Real sliders verify display formatting and rate and pitch restoration. |
+| Faster preset | 1.25× at 0% reverb without an extra graph. |
+| Shortcut reset | Real `browser.commands` verifies shortcut registration while the player keeps its settings. |
 
-Перехват HTTP(S) снабжает тесты локальными HTML и WAV. Функциональная аудиопроверка измеряет основной выход до, во время и после обработки, включая свёртку и усиление баса. Физическое открытие панели значком и вызов сочетанием на рабочем столе проверяются вручную.
+HTTP(S) interception supplies the local HTML and WAV. The functional audio check measures the main output before, during, and after processing, including reverb and bass boost. Opening the toolbar popup and using the physical shortcut are manual checks.

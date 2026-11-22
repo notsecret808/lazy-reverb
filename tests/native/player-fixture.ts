@@ -1,45 +1,9 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BrowserSession } from "../../tools/browser-session.js";
 
 const playerOrigins = new Set(["https://www.youtube.com", "https://music.youtube.com", "https://soundcloud.com", "https://unsupported.test"]);
 const audioOrigins = new Set([...playerOrigins, "https://audio.test"]);
-
-const playerHtml = `<!doctype html><html lang="ru"><meta charset="utf-8"><title>Плеер</title>
-<button id="play">Play</button><script>
-window.earlyEngine = typeof window.__lazyReverb?.get === 'function';
-const hidden = location.hostname === 'soundcloud.com';
-window.player = document.createElement(hidden ? 'audio' : 'video');
-player.src = location.search.includes('blocked') ? 'https://audio.test/tone.wav' : '/tone.wav';
-player.loop = true; player.playbackRate = 1.25; player.preservesPitch = true;
-if (!hidden) document.body.append(player);
-if (hidden) {
-  window.siteContext = new AudioContext();
-  const nativeOutput = siteContext.destination;
-  const observedOutput = siteContext.createGain();
-  const analyser = siteContext.createAnalyser();
-  // Place the analyser in the actual output path for this fixture.
-  Object.defineProperty(siteContext, 'destination', {value: observedOutput});
-  observedOutput.connect(analyser);
-  analyser.connect(nativeOutput);
-  window.outputPeak = () => {
-    const samples = new Float32Array(analyser.fftSize);
-    analyser.getFloatTimeDomainData(samples);
-    return samples.reduce((peak, value) => Math.max(peak, Math.abs(value)), 0);
-  };
-  window.impulses = [];
-  const createConvolver = siteContext.createConvolver.bind(siteContext);
-  siteContext.createConvolver = () => {
-    const node = createConvolver(); window.impulses.push(node); return node;
-  };
-  window.siteSource = siteContext.createMediaElementSource(player);
-  siteSource.connect(siteContext.destination);
-}
-document.querySelector('#play').onclick = async () => {
-  await window.siteContext?.resume();
-  await player.play();
-};
-</script></html>`;
 
 const wave = Buffer.alloc(44 + 48_000 * 2);
 wave.write("RIFF"); wave.writeUInt32LE(wave.length - 8, 4); wave.write("WAVEfmt ", 8);
@@ -52,6 +16,7 @@ for (let index = 0; index < 48_000; index++) {
 }
 
 export async function interceptFixture({ client, artifacts }: BrowserSession) {
+  const playerHtml = await readFile(new URL("./fixtures/player.html", import.meta.url), "utf8");
   const journal: { url: string; action: "local" | "abort" }[] = [];
   const failures: unknown[] = [];
   const pending = new Set<Promise<unknown>>();
@@ -79,7 +44,7 @@ export async function interceptFixture({ client, artifacts }: BrowserSession) {
     async verify() {
       await Promise.all(pending);
       await writeFile(join(artifacts, "network.json"), `${JSON.stringify(journal, null, 2)}\n`);
-      if (failures.length) throw new AggregateError(failures, "Ошибка перехвата HTTP(S)");
+      if (failures.length) throw new AggregateError(failures, "HTTP(S) interception failed");
     },
   };
 }
