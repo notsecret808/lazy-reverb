@@ -5,3 +5,4 @@ allowBuilds:
   esbuild: false
   geckodriver: false
 verifyDepsBeforeRun: error
+pmOnFail: error

@@ -8,6 +8,9 @@
     "node": ">=22.23.4 <23"
   },
   "scripts": {
+    "prepare": "node --import tsx tools/prepare-hooks.ts",
+    "check:commit": "node --import tsx tools/check-commit.ts && pnpm run lint && pnpm run typecheck && pnpm run test:unit && python3 -m unittest discover -s tests -p test_performance_gate.py",
+    "lint:commit": "commitlint",
     "lint": "oxlint --type-aware --deny-warnings src tools *.config.ts",
     "typecheck": "tsc -p src/tsconfig.json && tsc -p tsconfig.json",
     "package": "python3 tools/package.py",
