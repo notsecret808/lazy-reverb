@@ -17,7 +17,7 @@ def main():
         client.command('WebDriver:Navigate', {'url': 'data:text/html,<html lang="ru"><title>Lazy Reverb test</title><body>Audio test</body></html>'})
         # Keep the genuine browser convolver accessible to inspect its tail.
         client.inject_page_script('window.testConvolvers = []; window.testFilters = []; const create = AudioContext.prototype.createConvolver; AudioContext.prototype.createConvolver = function() { const node = create.call(this); testConvolvers.push(node); return node; }; const filter = AudioContext.prototype.createBiquadFilter; AudioContext.prototype.createBiquadFilter = function() { const node = filter.call(this); testFilters.push(node); return node; }; window.testConnect = AudioNode.prototype.connect;')
-        client.inject_page_script((ROOT / 'engine.js').read_text())
+        client.inject_page_script((ROOT / 'dist' / 'firefox' / 'engine.js').read_text())
         result = client.execute('''
 const done = arguments[arguments.length - 1];
 (async () => {

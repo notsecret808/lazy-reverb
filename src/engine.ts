@@ -1,28 +1,58 @@
 /* Runs in the page world: no extension APIs, credentials, or network requests. */
+import type { EffectSettings, EffectState } from "./engine-api";
+
+interface TrackedMedia {
+  original: { rate: number; pitch: boolean } | null;
+  blocked: boolean;
+  ref: WeakRef<HTMLMediaElement> | null;
+}
+
+interface OwnedSource {
+  source: MediaElementAudioSourceNode;
+  context: AudioContext;
+  connected: boolean;
+}
+
+interface Rack {
+  input: GainNode;
+  dry: GainNode;
+  wetActive: boolean;
+  bassActive: boolean;
+  wet?: GainNode;
+  bass?: BiquadFilterNode;
+  convolver?: ConvolverNode;
+}
 (() => {
   "use strict";
   if (window.__lazyReverb) return;
 
-  const settings = { enabled: false, rate: 0.85, mix: 0.25, bass: 0 };
-  const media = new WeakMap();
-  const mediaRefs = new Set();
-  const ownedSources = new WeakMap();
-  const siteSources = new WeakSet();
-  const racks = new WeakMap();
-  const rackRefs = new Set();
+  const settings: EffectSettings = { enabled: false, rate: 0.85, mix: 0.25, bass: 0 };
+  const media = new WeakMap<HTMLMediaElement, TrackedMedia>();
+  const mediaRefs = new Set<WeakRef<HTMLMediaElement>>();
+  const ownedSources = new WeakMap<HTMLMediaElement, OwnedSource>();
+  const siteSources = new WeakSet<HTMLMediaElement>();
+  const racks = new WeakMap<AudioContext, Rack>();
+  const rackRefs = new Set<WeakRef<AudioContext>>();
+  // Сохраняем методы до установки перехватчиков и передаём this при каждом вызове.
+  /* oxlint-disable typescript/unbound-method */
   const nativeConnect = AudioNode.prototype.connect;
   const nativeDisconnect = AudioNode.prototype.disconnect;
   const nativeCreateSource = AudioContext.prototype.createMediaElementSource;
   const nativePlay = HTMLMediaElement.prototype.play;
-  let mediaContext;
+  /* oxlint-enable typescript/unbound-method */
+  let mediaContext: AudioContext | undefined;
   let configured = false;
   let error = "";
 
-  function* rackEntries() {
+  function connectNodes(source: AudioNode, target: AudioNode) {
+    Reflect.apply(nativeConnect, source, [target]);
+  }
+
+  function* rackEntries(): Generator<[AudioContext, Rack]> {
     for (const ref of rackRefs) {
       const context = ref.deref();
       const rack = context && racks.get(context);
-      if (!rack || context.state === "closed") {
+      if (!context || !rack || context.state === "closed") {
         rackRefs.delete(ref);
         if (context) racks.delete(context);
         continue;
@@ -31,11 +61,11 @@
     }
   }
 
-  function* mediaEntries() {
+  function* mediaEntries(): Generator<[HTMLMediaElement, TrackedMedia]> {
     for (const ref of mediaRefs) {
       const element = ref.deref();
       const record = element && media.get(element);
-      if (!record || record.ref !== ref) { mediaRefs.delete(ref); continue; }
+      if (!element || !record || record.ref !== ref) { mediaRefs.delete(ref); continue; }
       yield [element, record];
     }
   }
@@ -47,7 +77,7 @@
     return false;
   }
 
-  function restoreMedia(element, record) {
+  function restoreMedia(element: HTMLMediaElement, record: TrackedMedia) {
     if (!record.original) return;
     const original = record.original;
     record.original = null;
@@ -55,20 +85,21 @@
     element.playbackRate = original.rate;
   }
 
-  function retireMedia(element, record) {
+  function retireMedia(element: HTMLMediaElement, record: TrackedMedia) {
     if (!record.ref) return;
     mediaRefs.delete(record.ref);
     record.ref = null;
     restoreMedia(element, record);
     const owned = ownedSources.get(element);
     if (owned?.connected) {
-      nativeDisconnect.call(owned.source);
+      Reflect.apply(nativeDisconnect, owned.source, []);
       owned.connected = false;
-      updateRack(owned.context, racks.get(owned.context));
+      const rack = racks.get(owned.context);
+      if (rack) updateRack(owned.context, rack);
     }
   }
 
-  function sweepMedia(except) {
+  function sweepMedia(except?: HTMLMediaElement) {
     for (const [element, record] of mediaEntries()) {
       // Detached Audio() may intentionally keep playing. Retire only paused
       // detached players; keep their weak metadata/source for a later replay.
@@ -76,12 +107,12 @@
     }
   }
 
-  function ramp(parameter, value, context) {
+  function ramp(parameter: AudioParam, value: number, context: AudioContext) {
     parameter.cancelScheduledValues(context.currentTime);
     parameter.setTargetAtTime(value, context.currentTime, 0.015);
   }
 
-  function impulse(context) {
+  function impulse(context: AudioContext) {
     const buffer = context.createBuffer(2, Math.ceil(context.sampleRate * 2.8), context.sampleRate);
     let seed = 731;
     for (let channel = 0; channel < 2; channel++) {
@@ -95,7 +126,7 @@
     return buffer;
   }
 
-  function updateRack(context, rack) {
+  function updateRack(context: AudioContext, rack: Rack) {
     if (context.state === "closed") return;
     const active = settings.enabled && (context !== mediaContext || hasOwnedInput());
     const mix = active ? settings.mix : 0;
@@ -116,19 +147,19 @@
       // Only our nodes are disconnected. The site's connections and context
       // remain intact; the disabled path is input -> dry -> destination.
       for (const node of [rack.input, rack.bass, rack.convolver, rack.wet]) {
-        if (node) nativeDisconnect.call(node);
+        if (node) Reflect.apply(nativeDisconnect, node, []);
       }
-      let signal = rack.input;
-      if (bassActive) {
-        nativeConnect.call(signal, rack.bass);
+      let signal: AudioNode = rack.input;
+      if (bassActive && rack.bass) {
+        connectNodes(signal, rack.bass);
         signal = rack.bass;
       }
-      nativeConnect.call(signal, rack.dry);
-      if (wetActive) {
+      connectNodes(signal, rack.dry);
+      if (wetActive && rack.convolver && rack.wet) {
         rack.convolver.buffer ||= impulse(context);
-        nativeConnect.call(signal, rack.convolver);
-        nativeConnect.call(rack.convolver, rack.wet);
-        nativeConnect.call(rack.wet, context.destination);
+        connectNodes(signal, rack.convolver);
+        connectNodes(rack.convolver, rack.wet);
+        connectNodes(rack.wet, context.destination);
       } else if (rack.convolver) {
         // Release the impulse and stop convolution, rather than just muting it.
         rack.convolver.buffer = null;
@@ -136,22 +167,23 @@
       rack.wetActive = wetActive;
       rack.bassActive = bassActive;
     }
-    if (bassActive) {
+    if (bassActive && rack.bass) {
       ramp(rack.bass.gain, bass, context);
     }
     ramp(rack.dry.gain, 1 - mix, context);
     if (rack.wet) ramp(rack.wet.gain, mix, context);
   }
 
-  function getRack(context) {
-    if (racks.has(context)) return racks.get(context);
-    const rack = {
+  function getRack(context: AudioContext): Rack {
+    const previous = racks.get(context);
+    if (previous) return previous;
+    const rack: Rack = {
       input: context.createGain(), dry: context.createGain(),
       wetActive: false, bassActive: false
     };
     // Native calls keep our own output connections out of the interception hook.
-    nativeConnect.call(rack.input, rack.dry);
-    nativeConnect.call(rack.dry, context.destination);
+    connectNodes(rack.input, rack.dry);
+    connectNodes(rack.dry, context.destination);
     racks.set(context, rack);
     rackRefs.add(new WeakRef(context));
     updateRack(context, rack);
@@ -160,19 +192,24 @@
 
   // SoundCloud can own its Web Audio graph. Process its final output, rather
   // than creating a second, forbidden MediaElementAudioSource for the player.
-  AudioNode.prototype.connect = function (destination, ...ports) {
+  function connect(this: AudioNode, destination: AudioNode, output?: number, input?: number): AudioNode;
+  function connect(this: AudioNode, destination: AudioParam, output?: number): void;
+  function connect(this: AudioNode, destination: AudioNode | AudioParam, ...ports: (number | undefined)[]): AudioNode | void {
     if (this.context instanceof AudioContext && destination === this.context.destination) {
       const rack = getRack(this.context);
-      nativeConnect.call(this, rack.input, ...ports);
+      Reflect.apply(nativeConnect, this, [rack.input, ...ports]);
       return destination;
     }
-    return nativeConnect.call(this, destination, ...ports);
-  };
-  AudioNode.prototype.disconnect = function (...args) {
-    if (args[0] === this.context.destination && racks.has(this.context)) {
-      args[0] = racks.get(this.context).input;
+    const result: unknown = Reflect.apply(nativeConnect, this, [destination, ...ports]);
+    if (result instanceof AudioNode) return result;
+  }
+  AudioNode.prototype.connect = connect;
+  AudioNode.prototype.disconnect = function (...args: unknown[]) {
+    if (args[0] === this.context.destination && this.context instanceof AudioContext) {
+      const rack = racks.get(this.context);
+      if (rack) args[0] = rack.input;
     }
-    return nativeDisconnect.apply(this, args);
+    Reflect.apply(nativeDisconnect, this, args);
   };
   AudioContext.prototype.createMediaElementSource = function (element) {
     // Reusing our source is safe only within its original AudioContext.
@@ -184,7 +221,7 @@
     return source;
   };
 
-  function safeToRoute(element) {
+  function safeToRoute(element: HTMLMediaElement) {
     if (element.mediaKeys) return false;
     const source = element.currentSrc || element.src;
     if (!source && !element.srcObject) return false;
@@ -197,13 +234,13 @@
     }
   }
 
-  function resume(context, ownedPlayback = false) {
+  function resume(context: AudioContext, ownedPlayback = false) {
     if ((settings.enabled || ownedPlayback) && context.state === "suspended") {
       context.resume().catch(() => { error = "Нажмите Play на странице, чтобы запустить обработку."; });
     }
   }
 
-  function attach(element, record) {
+  function attach(element: HTMLMediaElement, record: TrackedMedia) {
     if (siteSources.has(element) || ownedSources.has(element)) { record.blocked = false; return; }
     if (!settings.enabled || (settings.mix === 0 && settings.bass === 0)) { record.blocked = false; return; }
     // Routing a non-CORS cross-origin element would silence it permanently.
@@ -213,7 +250,7 @@
       mediaContext ||= new AudioContext();
       const rack = getRack(mediaContext);
       const source = nativeCreateSource.call(mediaContext, element);
-      nativeConnect.call(source, rack.input);
+      connectNodes(source, rack.input);
       ownedSources.set(element, { source, context: mediaContext, connected: true });
       updateRack(mediaContext, rack);
       record.blocked = false;
@@ -224,7 +261,7 @@
     }
   }
 
-  function applyMedia(element, record) {
+  function applyMedia(element: HTMLMediaElement, record: TrackedMedia) {
     if (settings.enabled) {
       if (!record.original) {
         record.original = { rate: element.playbackRate, pitch: element.preservesPitch };
@@ -235,18 +272,19 @@
     } else restoreMedia(element, record);
   }
 
-  function register(element) {
+  function register(element: HTMLMediaElement) {
     sweepMedia(element);
     let record = media.get(element);
     if (!record) {
-      record = { original: null, blocked: false, ref: null };
-      media.set(element, record);
+      const tracked: TrackedMedia = { original: null, blocked: false, ref: null };
+      record = tracked;
+      media.set(element, tracked);
       element.addEventListener("ratechange", () => {
-        if (record.ref && settings.enabled && element.playbackRate !== settings.rate) applyMedia(element, record);
+        if (tracked.ref && settings.enabled && element.playbackRate !== settings.rate) applyMedia(element, tracked);
       });
-      element.addEventListener("loadedmetadata", () => { if (record.ref) applyMedia(element, record); });
+      element.addEventListener("loadedmetadata", () => { if (tracked.ref) applyMedia(element, tracked); });
       element.addEventListener("play", () => register(element));
-      const cleanup = () => { if (element.paused && !element.isConnected) retireMedia(element, record); };
+      const cleanup = () => { if (element.paused && !element.isConnected) retireMedia(element, tracked); };
       element.addEventListener("pause", cleanup);
       element.addEventListener("emptied", cleanup);
     }
@@ -255,7 +293,7 @@
     if (owned && !owned.connected) {
       try {
         const rack = getRack(owned.context);
-        nativeConnect.call(owned.source, rack.input);
+        connectNodes(owned.source, rack.input);
         owned.connected = true;
         updateRack(owned.context, rack);
         resume(owned.context, true);
@@ -267,7 +305,7 @@
     applyMedia(element, record);
   }
 
-  HTMLMediaElement.prototype.play = function (...args) {
+  HTMLMediaElement.prototype.play = function (...args: []) {
     register(this); // Also finds detached new Audio() players used by SoundCloud.
     if (settings.enabled) for (const [context] of rackEntries()) resume(context);
     return nativePlay.apply(this, args);
@@ -280,12 +318,12 @@
     for (const [context] of rackEntries()) resume(context);
   }, true);
 
-  function scan(root) {
+  function scan(root: Document | Element) {
     if (root instanceof HTMLMediaElement) register(root);
-    root.querySelectorAll?.("audio, video").forEach(register);
+    root.querySelectorAll?.<HTMLMediaElement>("audio, video").forEach(register);
   }
 
-  function snapshot() {
+  function snapshot(): EffectState {
     sweepMedia();
     const records = [...mediaEntries()].map(([, record]) => record);
     const contexts = [...rackEntries()].map(([context]) => context);
@@ -297,15 +335,15 @@
     };
   }
 
-  function set(options) {
+  function set(options: unknown): EffectState {
     if (!options || typeof options !== "object") return snapshot();
     error = "";
     sweepMedia();
     const wasEnabled = settings.enabled;
-    if (typeof options.enabled === "boolean") settings.enabled = options.enabled;
-    if (Number.isFinite(options.rate)) settings.rate = Math.min(2, Math.max(0.5, options.rate));
-    if (Number.isFinite(options.mix)) settings.mix = Math.min(1, Math.max(0, options.mix));
-    if (Number.isFinite(options.bass)) settings.bass = Math.min(12, Math.max(0, options.bass));
+    if ("enabled" in options && typeof options.enabled === "boolean") settings.enabled = options.enabled;
+    if ("rate" in options && typeof options.rate === "number" && Number.isFinite(options.rate)) settings.rate = Math.min(2, Math.max(0.5, options.rate));
+    if ("mix" in options && typeof options.mix === "number" && Number.isFinite(options.mix)) settings.mix = Math.min(1, Math.max(0, options.mix));
+    if ("bass" in options && typeof options.bass === "number" && Number.isFinite(options.bass)) settings.bass = Math.min(12, Math.max(0, options.bass));
     configured = true;
     if (settings.enabled && !wasEnabled) scan(document);
     for (const [element, record] of mediaEntries()) applyMedia(element, record);

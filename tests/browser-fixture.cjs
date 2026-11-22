@@ -6,7 +6,7 @@ const { test: base, expect } = require('@playwright/test');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '..', 'dist', 'firefox');
 const engine = readFileSync(path.join(root, 'engine.js'), 'utf8');
 const panelHost = 'lazy-reverb.test';
 const files = new Set(['popup.html', 'popup.js', 'popup.css', 'icon.svg']);

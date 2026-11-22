@@ -99,7 +99,7 @@ def main():
         client.command('WebDriver:Navigate', {'url': 'data:text/html,<html><title>DSP performance fixture</title><body></body></html>'})
         client.inject_page_script(SETUP)
         click_play()
-        engine_code = (ROOT / 'engine.js').read_text()
+        engine_code = (ROOT / 'dist' / 'firefox' / 'engine.js').read_text()
         time.sleep(1)
         preflight = client.execute(STATE)['value']
         valid = preflight['context'] == 'running' and preflight['currentTime'] > 0 and preflight['connected']

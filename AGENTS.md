@@ -11,14 +11,14 @@
 | Файл | Ответственность |
 | --- | --- |
 | `manifest.json` | Разрешения, поддерживаемые адреса, ранняя загрузка движка в MAIN, сочетание `_execute_action` |
-| `engine.js` | Аудиограф, обнаружение плееров, скорость, состояние эффекта; `window.__lazyReverb.get()/set()` |
-| `popup.html`, `popup.css`, `popup.js` | Панель на русском языке, управление текущей вкладкой, локальные настройки и очередь изменений |
-| `tests/engine.test.cjs`, `tests/popup.test.cjs` | Модульные тесты поведения и детерминированных ограничений производительности |
+| `src/engine.ts` | Аудиограф, обнаружение плееров, скорость, состояние эффекта и `window.__lazyReverb.get()/set()` |
+| `popup.html`, `popup.css`, `src/popup.ts` | Панель на русском языке, управление текущей вкладкой, локальные настройки и очередь изменений |
+| `tests/engine.test.ts`, `tests/popup.test.ts` | Модульные тесты поведения собранного движка и панели |
 | `tests/player.spec.cjs`, `tests/browser-fixture.cjs` | Playwright-сценарии интерфейса и движка в тестовом Firefox |
 | `tools/firefox-smoke.py`, `tools/browser_session.py` | Установка настоящего дополнения и проверка аудио в отдельном профиле Zen/Firefox через Marionette |
 | `tools/performance.py`, `tools/performance_gate.py`, `performance-budget.json` | Сравнительный замер CPU/PSS, оценка бюджета и контроль шума |
 | `tests/test_performance_gate.py`, `tools/test.py` | Проверки вердиктов performance-гейта и общий функциональный гейт |
-| `tools/package.py` | ZIP только с шестью файлами расширения; без тестов, зависимостей и отчётов |
+| `tools/build.ts`, `tools/package.ts` | Сборка Firefox 128 и ZIP из тех же шести файлов расширения |
 | `ARCHITECTURE.md`, `.github/workflows/check.yml` | Поток управления, владение ресурсами и проверки GitHub Actions |
 
 ## Важные инварианты
@@ -70,7 +70,7 @@ CI запускает модульные тесты, Playwright и упаков�
 
 ## Упаковка и проверка пользователем
 
-`npm run package` создаёт `dist/lazy-reverb-<version>.zip`; установка npm-зависимостей для упаковки не нужна. Без npm используйте `python3 tools/package.py`. В среде с обязательным RTK запускайте эти команды через `rtk run`. Сверяйте версию с `manifest.json` и `package.json`; lock-файл меняется при изменении npm-зависимостей или метаданных пакета.
+`pnpm run build` создаёт `dist/firefox/`. Для временной установки из папки используйте `dist/firefox/manifest.json`. `pnpm run package` собирает эти же файлы и упаковывает их в `dist/lazy-reverb-<version>.zip`.
 
 Дополнение пока не подписано: загрузка через `about:debugging` временная и исчезает при перезапуске. После перезагрузки дополнения нужно обновить музыкальную вкладку, иначе там остаётся старый движок. Для постоянной установки используйте подпись Mozilla, не отключение проверки подписей.
 
