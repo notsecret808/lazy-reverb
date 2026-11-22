@@ -10,7 +10,7 @@
 npm run package
 ```
 
-Готовый архив: `dist/lazy-reverb-0.3.0.zip`. Нужны npm и Python 3; устанавливать зависимости через `npm ci` для упаковки не требуется. Без npm можно выполнить `python3 tools/package.py`.
+Готовый архив: `dist/lazy-reverb-0.3.0.zip`. На этапе перехода его можно собрать командой `python3 tools/package.py` без установки зависимостей.
 
 Архив содержит только шесть файлов расширения, без тестов, отчётов и зависимостей. Для временной загрузки в Zen откройте `about:debugging#/runtime/this-firefox`, нажмите **Загрузить временное дополнение…** и выберите ZIP. Сборка не добавляет подпись Mozilla.
 
@@ -66,23 +66,29 @@ npm run package
 
 ## Разработка и проверки
 
-Runtime состоит из шести файлов и не требует сборки или npm-зависимостей. Для тестов нужны Node.js 22+, Python 3 и тестовый Firefox Playwright:
+Runtime состоит из шести файлов и пока устанавливается из исходников. Для разработки используйте Node из `.nvmrc`, pnpm из поля `packageManager` и Python 3. pnpm можно установить в выбранную `nvm`-версию Node командой `npm install --global pnpm@11.6.0`.
 
 ```sh
-npm ci
-npx playwright install firefox
-npm run test:unit
+nvm install
+nvm use
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run typecheck
+pnpm exec playwright install firefox
+pnpm run test:unit
 python3 -m unittest discover -s tests -p test_performance_gate.py
-npm test
+pnpm test
 ```
 
 Для полной локальной проверки с установленным Zen:
 
 ```sh
-python3 tools/test.py --browser /opt/zen/zen
+pnpm run check --browser /opt/zen/zen
 ```
 
 В среде, которая требует RTK, запускайте команды через `rtk run`.
+
+Oxlint проверяет TypeScript с учётом типов и завершает работу с ошибкой при любом предупреждении. `tsc --noEmit` отдельно проверяет браузерный и Node-проекты. Текущие JavaScript-сценарии продолжают запускаться старым функциональным гейтом до переноса на TypeScript. [Карта переноса проверок](docs/typescript-migration-coverage.md)
 
 Проверки включают **33 модульных теста**, **15 сценариев Playwright** и нативный smoke-тест дополнения в отдельном профиле Zen. Модульные тесты проверяют также сборку мусора, восстановление плееров и отсутствие роста графа после повторных переключений. Нативный тест проверяет свёртку, частотную характеристику баса, освобождение буфера, высоту панели и API регистрации горячей клавиши. Физическое нажатие сочетания на рабочем столе проверяется вручную.
 

@@ -13,18 +13,21 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version-file: .nvmrc
+          cache: pnpm
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: npm ci
-      - run: npx playwright install --with-deps firefox
-      - run: npm run test:unit
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm exec playwright install --with-deps firefox
+      - run: pnpm run test:unit
       - run: python3 -m unittest discover -s tests -p test_performance_gate.py
-      - run: npm test
+      - run: pnpm test
       - run: python3 tools/package.py
       - uses: actions/upload-artifact@v4
         if: failure()

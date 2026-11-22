@@ -16,7 +16,7 @@ def main():
         ['node', 'tests/popup.test.cjs'],
         [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_performance_gate.py'],
         [sys.executable, 'tools/firefox-smoke.py', '--browser', args.browser],
-        ['node', 'node_modules/playwright/cli.js', 'test'],
+        ['pnpm', 'exec', 'playwright', 'test'],
     ]
     for check in checks:
         print('Running:', ' '.join(check), flush=True)
