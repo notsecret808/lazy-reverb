@@ -55,7 +55,9 @@ export async function runChecks(mode: Mode, options: CheckOptions): Promise<numb
     LAZY_REVERB_SCREENSHOT: options.screenshot ? resolve(options.screenshot) : undefined,
   });
   if (status || mode !== "push") return status;
-  return runPerformance(runtime, { archive, driver: options.driver, browser: "/opt/zen/zen" });
+  return runPerformance(runtime, {
+    archive, driver: options.driver, browser: process.env.LAZY_REVERB_ZEN ?? "/opt/zen/zen",
+  });
 }
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
