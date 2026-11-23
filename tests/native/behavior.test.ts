@@ -23,7 +23,7 @@ declare global {
 
 const browserPath = process.env.LAZY_REVERB_BROWSER ?? "/usr/bin/firefox";
 const driver = process.env.LAZY_REVERB_GECKODRIVER ?? resolve("dist/drivers/geckodriver");
-const archive = process.env.LAZY_REVERB_ARCHIVE ?? resolve("dist/lazy-reverb-0.3.0.zip");
+const archive = process.env.LAZY_REVERB_ARCHIVE ?? resolve("dist/lazy-reverb-0.3.0-firefox.zip");
 const artifacts = process.env.LAZY_REVERB_ARTIFACTS ?? "dist/native";
 const youtube = "https://www.youtube.com/player";
 const soundcloud = "https://soundcloud.com/player";

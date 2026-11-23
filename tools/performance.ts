@@ -4,7 +4,8 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { buildExtension, dist } from "./build.js";
+import { dist } from "./build.js";
+import { readExtensionFiles } from "./extension-files.js";
 import { defaultDriver, evaluate, withBrowser } from "./browser-session.js";
 import { assess, exitCodes, phases, readBudget, summarize } from "./performance-gate.js";
 import type { Phase, Sample } from "./performance-gate.js";
@@ -50,7 +51,7 @@ function checkPlayback(value: unknown, phase: Phase): Playback {
   return data;
 }
 
-export interface PerformanceOptions { browser: string; driver: string; archive?: string }
+export interface PerformanceOptions { browser: string; driver: string; archive: string }
 
 export async function runPerformance(runtime: string, { browser, driver, archive }: PerformanceOptions): Promise<number> {
   const report = {
@@ -63,8 +64,9 @@ export async function runPerformance(runtime: string, { browser, driver, archive
   let invalid: string | undefined;
   try {
     if (process.platform !== "linux") throw new Error("CPU/PSS benchmarking requires Linux");
+    const { engine: entrypoint } = await readExtensionFiles(runtime);
     const [engine, fixture] = await Promise.all([
-      readFile(join(runtime, "engine.js"), "utf8"),
+      readFile(join(runtime, entrypoint), "utf8"),
       readFile(new URL("./fixtures/performance.html", import.meta.url), "utf8"),
     ]);
     const scripts: Record<Phase, string | undefined> = {
@@ -75,10 +77,9 @@ export async function runPerformance(runtime: string, { browser, driver, archive
       paused: "bench.disconnect.call(bench.source);",
       native_after: "bench.direct.call(bench.source, bench.context.destination);",
     };
-    const installation = archive ?? await packageExtension(runtime);
     await withBrowser({ browser, driver, artifacts: join(dist, "performance-artifacts"), timeout: 150_000 }, async session => {
       const { client } = session;
-      await session.install(installation);
+      await session.install(archive);
       await client.setMozContext("chrome");
       try {
         await client.executeScript("Services.io.manageOfflineStatus = false; Services.io.offline = true;", []);
@@ -139,7 +140,10 @@ export async function runPerformance(runtime: string, { browser, driver, archive
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ options: { browser: { type: "string" }, driver: { type: "string" }, help: { type: "boolean" } } });
   if (values.help) console.log("pnpm run check:perf [--browser /opt/zen/zen] [--driver /path/to/geckodriver]");
-  else process.exitCode = await runPerformance(await buildExtension(), {
-    browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? defaultDriver(),
-  });
+  else {
+    const { runtime, archive } = await packageExtension();
+    process.exitCode = await runPerformance(runtime, {
+      archive, browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? defaultDriver(),
+    });
+  }
 }

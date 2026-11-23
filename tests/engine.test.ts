@@ -1,10 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import type { EffectState } from "../src/engine-api.js";
+import { readExtensionFiles } from "../tools/extension-files.js";
 
-const code = readFileSync(new URL("../dist/firefox/engine.js", import.meta.url), "utf8");
+const runtime = new URL("../dist/firefox/", import.meta.url);
+const { engine } = await readExtensionFiles(fileURLToPath(runtime));
+const code = readFileSync(new URL(engine, runtime), "utf8");
 
 function fixture(sourceCode = code) {
   const contexts: Context[] = [];

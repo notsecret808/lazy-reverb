@@ -2,10 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { setImmediate as settle } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import type { EffectSettings, EffectState } from "../src/engine-api.js";
+import { readExtensionFiles } from "../tools/extension-files.js";
 
-const code = readFileSync(new URL("../dist/firefox/popup.js", import.meta.url), "utf8");
+const runtime = new URL("../dist/firefox/", import.meta.url);
+const { popupScript } = await readExtensionFiles(fileURLToPath(runtime));
+const code = readFileSync(new URL(popupScript, runtime), "utf8");
 
 interface PopupOptions {
   url?: string;
@@ -47,6 +51,7 @@ async function popup({ url = 'https://www.youtube.com/watch?v=test', preferences
   const gates: { execute?: ReturnType<typeof deferred>; storage?: ReturnType<typeof deferred> } = {};
   const failures = { injection: false, storage: false, shortcut: false };
   const browser = {
+    runtime: { id: "test@extension" },
     commands: {
       getAll: async () => [{ name: '_execute_action', shortcut }],
       update: async (command: { name: string; shortcut: string }) => {

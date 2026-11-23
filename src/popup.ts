@@ -1,3 +1,4 @@
+import { browser } from "wxt/browser";
 import type { EffectSettings, EffectState } from "./engine-api";
 
 function control<T extends Element>(selector: string): T {
@@ -55,9 +56,18 @@ async function showShortcut() {
 
 async function resetShortcut() {
   try {
-    await browser.commands.update({ name: "_execute_action", shortcut: "Ctrl+Shift+F8" });
+    const commands = browser.commands;
+    if (hasCommandUpdate(commands)) {
+      await commands.update({ name: "_execute_action", shortcut: "Ctrl+Shift+F8" });
+    } else {
+      await browser.tabs.create({ url: "chrome://extensions/shortcuts" });
+    }
     await showShortcut();
   } catch (error) { shortcutLabel.textContent = `Could not assign the keyboard shortcut: ${message(error)}`; }
+}
+
+function hasCommandUpdate(commands: typeof browser.commands): commands is typeof browser.commands & Pick<typeof globalThis.browser.commands, "update"> {
+  return "update" in commands && typeof commands.update === "function";
 }
 shortcutReset.addEventListener("click", () => { resetShortcut().catch(error => { shortcutLabel.textContent = message(error); }); });
 showShortcut().catch(error => { shortcutLabel.textContent = message(error); });

@@ -22,7 +22,7 @@ interface Rack {
   bass?: BiquadFilterNode;
   convolver?: ConvolverNode;
 }
-(() => {
+export function installEngine() {
   "use strict";
   if (window.__lazyReverb) return;
 
@@ -364,4 +364,4 @@ interface Rack {
   }
 
   Object.defineProperty(window, "__lazyReverb", { value: Object.freeze({ get: snapshot, set }) });
-})();
+}

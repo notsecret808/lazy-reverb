@@ -10,14 +10,14 @@ Follow the environment instructions and any parent AGENTS.md. Use RTK for shell 
 
 | File | Responsibility |
 | --- | --- |
-| `manifest.json` | Permissions, supported URLs, early engine loading in MAIN, and the `_execute_action` shortcut |
+| `wxt.config.ts`, `src/extension-hosts.ts`, `src/entrypoints/` | Target manifests, permissions, supported URLs, early MAIN entry, and shortcut defaults |
 | `src/engine.ts` | Audio graph, player discovery, playback rate, effect state, and `window.__lazyReverb.get()/set()` |
-| `popup.html`, `popup.css`, `src/popup.ts` | Popup, current-tab controls, local preferences, and the update queue |
+| `src/entrypoints/popup.html`, `src/popup.css`, `src/popup.ts` | Popup, current-tab controls, local preferences, and the update queue |
 | `tests/engine.test.ts`, `tests/popup.test.ts` | Behavior of the bundled engine and popup |
 | `tests/native/`, `tools/browser-session.ts` | Native tests of the real ZIP in temporary Firefox or Zen profiles, using local fixtures and audio measurements |
 | `tools/performance.ts`, `tools/process-sampler.ts`, `tools/performance-gate.ts`, `performance-budget.json` | Comparative CPU/PSS sampling, validation, budget checks, and noise detection |
 | `tests/performance-gate.test.ts`, `tests/process-sampler.test.ts`, `tools/test.ts` | CPU/PSS fixtures and the combined functional check, which builds once |
-| `tools/build.ts`, `tools/package.ts` | Firefox 128 build and ZIP containing the same six extension files |
+| `tools/build.ts`, `tools/package.ts`, `tools/extension-files.ts` | WXT target builds and validation of runtime files and ZIP contents |
 | `ARCHITECTURE.md`, `.github/workflows/check.yml` | Control flow, resource ownership, and GitHub Actions checks |
 
 ## Invariants
@@ -65,7 +65,7 @@ CI checks lint, types, the commit range, unit fixtures, native Firefox, and the 
 
 ## Packaging and manual verification
 
-`pnpm run build` creates `dist/firefox/`. To load the directory as a temporary extension, select `dist/firefox/manifest.json`. `pnpm run package` builds the same files and writes `dist/lazy-reverb-<version>.zip`.
+`pnpm run build` creates `dist/firefox/` by default. Build and package accept `--target firefox|chromium|all`. Packaging writes `dist/lazy-reverb-<version>-firefox.zip` and/or `dist/lazy-reverb-<version>-chromium.zip`. Use `about:debugging` for Firefox and **Load unpacked** in developer mode for Chromium.
 
 Loading the unsigned extension through `about:debugging` is temporary and ends on browser restart. Refresh music tabs after reloading the extension to load the new engine. Permanent installations require Mozilla signing.
 

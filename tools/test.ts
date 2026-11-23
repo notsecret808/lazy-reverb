@@ -44,12 +44,14 @@ export async function runChecks(mode: Mode, options: CheckOptions): Promise<numb
       if (status) return status;
     }
   }
-  const runtime = await buildExtension();
+  const packaged = mode === "unit" ? undefined : await packageExtension();
+  const runtime = packaged?.runtime ?? await buildExtension();
   if (mode !== "native") {
     const status = child(process.execPath, ["--expose-gc", "--import", "tsx", "--test", ...testFiles("tests")]);
     if (status || mode === "unit") return status;
   }
-  const archive = await packageExtension(runtime);
+  const archive = packaged?.archive;
+  if (!archive) throw new Error("Expected a packaged extension for native checks");
   const status = child(process.execPath, ["--import", "tsx", "--test", "--test-concurrency=1", ...testFiles("tests/native")], {
     ...process.env, LAZY_REVERB_ARCHIVE: archive, LAZY_REVERB_BROWSER: options.browser, LAZY_REVERB_GECKODRIVER: options.driver,
     LAZY_REVERB_SCREENSHOT: options.screenshot ? resolve(options.screenshot) : undefined,

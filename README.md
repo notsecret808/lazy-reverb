@@ -1,18 +1,21 @@
 # Lazy Reverb
 
-Change playback speed and pitch, add reverb, and boost bass on YouTube, YouTube Music, and SoundCloud in **Zen Browser** and Firefox 128+. Audio stays in the browser. The extension needs no server, account, or track download.
+Change playback speed and pitch, add reverb, and boost bass on YouTube, YouTube Music, and SoundCloud. Lazy Reverb builds for **Zen Browser**, Firefox 128+, and Chromium 128+. Audio stays in the browser.
 
 ## Build a ZIP for the browser
 
 After installing the dependencies below, run this from the project directory:
 
 ```sh
-pnpm run package
+pnpm run package --target all
 ```
 
-The command creates `dist/lazy-reverb-0.3.0.zip` from a fresh build in `dist/firefox/`. The ZIP includes the six extension files. To load it temporarily in Zen, open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on…**, and choose the ZIP. The package is unsigned.
+WXT generates a fresh Manifest V3 build for each target. Both `pnpm run build` and `pnpm run package` take `--target firefox`, `--target chromium`, or `--target all`. Firefox is the default.
 
-To load an unpacked build, run `pnpm run build` and choose its manifest instead.
+| Target | Build directory | Unsigned ZIP |
+| --- | --- | --- |
+| Firefox and Zen | `dist/firefox/` | `dist/lazy-reverb-0.3.0-firefox.zip` |
+| Chromium | `dist/chromium/` | `dist/lazy-reverb-0.3.0-chromium.zip` |
 
 ## Install and update in Zen
 
@@ -24,9 +27,18 @@ To load an unpacked build, run `pnpm run build` and choose its manifest instead.
 
 The current version is **0.3.0**. For a directory installation, run `pnpm run build` after updating and select **Reload** in `about:debugging`. For a ZIP installation, run `pnpm run package` and select the fresh archive through **Load Temporary Add-on…**. Then refresh your music tabs.
 
-If you installed the extension from the repository root before the TypeScript migration, Zen still loads the popup from that directory. The scripts now live in `dist/firefox/`, so the old popup stalls at its connecting message. In `about:debugging`, select **Load Temporary Add-on…** and choose `dist/firefox/manifest.json` after building or `dist/lazy-reverb-0.3.0.zip` after packaging. Then refresh your music tab.
+If you installed the extension from the repository root before the TypeScript migration, Zen still loads the popup from that directory. Rebuild and select `dist/firefox/manifest.json` or the Firefox ZIP in `about:debugging`, then refresh your music tab.
 
 Temporary add-ons are removed when the browser restarts. Permanent installation requires Mozilla signing.
+
+## Install in Chromium
+
+1. Build with `pnpm run build --target chromium` or extract the Chromium ZIP.
+2. Open `chrome://extensions` and turn on **Developer mode**.
+3. Select **Load unpacked** and choose the directory containing `manifest.json`.
+4. Refresh your music tabs and open Lazy Reverb from the extensions menu.
+
+These packages are for local installation. Store submission, signing, and published updates use a separate release process.
 
 ## Quick access
 
@@ -66,7 +78,7 @@ Players and contexts are tracked through weak references. For paused players rem
 
 ## Development and checks
 
-The runtime is six files in `dist/firefox/`. Use the Node version in `.nvmrc` and the pnpm version in `packageManager`. Install pnpm into the selected Node environment with `npm install --global pnpm@11.6.0` if needed.
+WXT builds each target using the Node version in `.nvmrc` and the pnpm version in `packageManager`. Install pnpm into the selected Node environment with `npm install --global pnpm@11.6.0` if needed.
 
 ```sh
 nvm install
