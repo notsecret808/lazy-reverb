@@ -15,7 +15,7 @@ flowchart LR
 
 WXT generates a Manifest V3 file for each target. The content entry loads the engine in `MAIN` at `document_start` on supported sites. This lets the engine see detached players and Web Audio connections created during page startup. There is no background script.
 
-`src/popup.ts` checks the active tab's URL and sends settings through `browser.scripting.executeScript`. A revision counter in the queue skips obsolete slider changes. The popup stores the applied preferences in `storage.local`. Each page keeps its own enabled flag. `browser.commands` reads and assigns the popup shortcut.
+`src/popup.ts` checks the active tab's URL and sends settings through `browser.scripting.executeScript`. A revision counter in the queue skips obsolete slider changes. The popup stores the applied preferences in `storage.local`. Each page keeps its own enabled flag. `src/shortcuts.ts` reads the registered binding and exposes the available edit action. Firefox updates the binding through the commands API. Chromium opens its built-in shortcut settings. Additional shortcut behavior is tracked under `improve-extension-shortcuts`.
 
 The page can call `window.__lazyReverb.get()/set()` for its own effects. The engine validates input types and ranges. Extension APIs, storage, and permissions stay in the popup.
 

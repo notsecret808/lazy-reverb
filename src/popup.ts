@@ -1,4 +1,5 @@
 import { browser } from "wxt/browser";
+import { shortcutControls } from "./shortcuts";
 import type { EffectSettings, EffectState } from "./engine-api";
 
 function control<T extends Element>(selector: string): T {
@@ -40,36 +41,29 @@ const controls = control<HTMLFieldSetElement>("#controls");
 const status = control<HTMLElement>("#status");
 const shortcutLabel = control<HTMLElement>("#shortcut");
 const shortcutReset = control<HTMLButtonElement>("#shortcut-reset");
+const shortcut = shortcutControls();
 let tabId: number | undefined;
 let queue = Promise.resolve();
 let revision = 0;
 
 async function showShortcut() {
   try {
-    const commands = await browser.commands.getAll();
-    const shortcut = commands.find(command => command.name === "_execute_action")?.shortcut;
-    shortcutLabel.textContent = shortcut ? `${shortcut} — open the popup` : "No keyboard shortcut assigned";
+    const binding = await shortcut.read();
+    shortcutLabel.textContent = binding ? `${binding} — open the popup` : "No keyboard shortcut assigned";
   } catch {
     shortcutLabel.textContent = "Could not read the keyboard shortcut";
   }
 }
 
-async function resetShortcut() {
+async function changeShortcut() {
   try {
-    const commands = browser.commands;
-    if (hasCommandUpdate(commands)) {
-      await commands.update({ name: "_execute_action", shortcut: "Ctrl+Shift+F8" });
-    } else {
-      await browser.tabs.create({ url: "chrome://extensions/shortcuts" });
-    }
+    await shortcut.change();
     await showShortcut();
-  } catch (error) { shortcutLabel.textContent = `Could not assign the keyboard shortcut: ${message(error)}`; }
+  } catch (error) { shortcutLabel.textContent = `Could not change the keyboard shortcut: ${message(error)}`; }
 }
 
-function hasCommandUpdate(commands: typeof browser.commands): commands is typeof browser.commands & Pick<typeof globalThis.browser.commands, "update"> {
-  return "update" in commands && typeof commands.update === "function";
-}
-shortcutReset.addEventListener("click", () => { resetShortcut().catch(error => { shortcutLabel.textContent = message(error); }); });
+shortcutReset.textContent = shortcut.label;
+shortcutReset.addEventListener("click", () => { changeShortcut().catch(error => { shortcutLabel.textContent = message(error); }); });
 showShortcut().catch(error => { shortcutLabel.textContent = message(error); });
 
 function preferencesInput(value: object): Partial<EffectSettings> {

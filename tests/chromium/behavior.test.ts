@@ -44,7 +44,18 @@ await test("Chromium installs the production ZIP and controls a hidden SoundClou
       const dry = await page.evaluate(() => window.outputPeak());
       const panel = await session.openPanel(page);
       await panel.waitForFunction(() => document.querySelector<HTMLInputElement>("#enabled")?.disabled === false);
-      assert.match(await panel.locator("#shortcut").textContent() ?? "", /open the popup|No keyboard shortcut assigned/);
+      const shortcut = panel.locator("#shortcut");
+      const defaultBinding = process.platform === "darwin" ? "Command+Shift+Y" : "Ctrl+Shift+Y";
+      const expectedBinding = `${defaultBinding} — open the popup`;
+      await panel.waitForFunction(expected => document.querySelector("#shortcut")?.textContent === expected, expectedBinding);
+      const [settings] = await Promise.all([
+        context.waitForEvent("page"),
+        panel.getByRole("button", { name: "Open shortcut settings" }).click(),
+      ]);
+      await settings.waitForURL("chrome://extensions/shortcuts");
+      await settings.close();
+      await page.bringToFront();
+      assert.equal(await shortcut.textContent(), expectedBinding);
       await panel.getByRole("button", { name: "Faster" }).click();
       await slider(panel, "rate", 1);
       await slider(panel, "bass", 6);

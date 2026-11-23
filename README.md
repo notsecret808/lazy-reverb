@@ -43,9 +43,9 @@ These packages are for local installation. Store submission, signing, and publis
 ## Quick access
 
 - To pin the icon, open the Zen extensions menu, right-click **Lazy Reverb**, and select **Pin to Toolbar**. [Zen extensions guide](https://docs.zen-browser.app/user-manual/extensions)
-- The default shortcut is **Ctrl+Shift+F8**. The popup shows the shortcut currently registered in the browser.
-- If an older shortcut remains after an update, select **Assign Ctrl+Shift+F8** in the popup.
-- To choose a different shortcut, open `about:addons`, select the gear, and choose **Manage Extension Shortcuts**. A conflicting system shortcut can prevent the popup from opening.
+- The default is **Ctrl+Shift+F8** on Firefox and Zen, **Ctrl+Shift+Y** on Chromium, and **Command+Shift+Y** for Chromium on macOS. The popup shows the shortcut reported by the browser.
+- On Firefox and Zen, select **Assign Ctrl+Shift+F8** to restore the default, or use **Manage Extension Shortcuts** from the gear menu in `about:addons` to choose another key.
+- On Chromium, select **Open shortcut settings** to change the binding in the browser. A conflicting system shortcut can prevent the popup from opening.
 
 ## Controls
 

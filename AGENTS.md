@@ -70,7 +70,7 @@ CI checks lint, types, the commit range, unit fixtures, native Firefox, and the 
 
 Loading the unsigned extension through `about:debugging` is temporary and ends on browser restart. Refresh music tabs after reloading the extension to load the new engine. Permanent installations require Mozilla signing.
 
-The default shortcut is **Ctrl+Shift+F8**. The popup shows the registered shortcut and can assign it through `browser.commands.update`. An older assignment may persist through an update. The Zen extensions menu can pin the icon. The **Lazy** preset enables processing. **Faster** selects 1.25× with 0% reverb. For bass alone, set speed to **1.00×** and reverb to **0%**.
+The popup reads the registered shortcut through `commands.getAll`. Firefox can reassign **Ctrl+Shift+F8** through `commands.update`. Chromium uses **Ctrl+Shift+Y** (**Command+Shift+Y** on macOS) and opens the browser shortcut settings for edits. An older assignment may persist through an update. The Zen extensions menu can pin the icon. The **Lazy** preset enables processing. **Faster** selects 1.25× with 0% reverb. For bass alone, set speed to **1.00×** and reverb to **0%**.
 
 Report concrete changes, checks run, and measurement limits. State whether the performance gate passed.
 
