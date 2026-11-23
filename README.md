@@ -22,7 +22,9 @@ To load an unpacked build, run `pnpm run build` and choose its manifest instead.
 4. Refresh your music tabs, start playback, and open **Lazy Reverb** from the extensions menu.
 5. Select **Lazy** or switch on **Audio effects** and adjust the sliders.
 
-The current version is **0.3.0**. After updating the source, rebuild, select **Reload** for the add-on in `about:debugging`, and refresh your music tabs.
+The current version is **0.3.0**. For a directory installation, run `pnpm run build` after updating and select **Reload** in `about:debugging`. For a ZIP installation, run `pnpm run package` and select the fresh archive through **Load Temporary Add-on…**. Then refresh your music tabs.
+
+If you installed the extension from the repository root before the TypeScript migration, Zen still loads the popup from that directory. The scripts now live in `dist/firefox/`, so the old popup stalls at its connecting message. In `about:debugging`, select **Load Temporary Add-on…** and choose `dist/firefox/manifest.json` after building or `dist/lazy-reverb-0.3.0.zip` after packaging. Then refresh your music tab.
 
 Temporary add-ons are removed when the browser restarts. Permanent installation requires Mozilla signing.
 
