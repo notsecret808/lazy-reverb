@@ -26,12 +26,16 @@ on:
         type: choice
         options:
           - publish
+          - reply_to_threads
           - edit_summary_comment
           - edit_review_summary
           - resolve_thread
           - react_to_pr
           - react_to_comment
           - react_to_review_comment
+      replies:
+        description: JSON array of review_comment_id and body pairs for a batch
+        type: string
       target_id:
         description: Comment, review, or review thread ID for the selected action
         type: string
@@ -50,6 +54,9 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.actor == 'notsecret808' && github.run_attempt == '1'
     runs-on: ubuntu-latest
     environment: pr-comment-bot
+    concurrency:
+      group: ${{ inputs.operation == 'reply_to_threads' && format('review-bot-replies-{0}', inputs.pr) || format('review-bot-run-{0}', github.run_id) }}
+      queue: max
     steps:
       - name: Validate inputs
         env:
@@ -57,6 +64,8 @@ jobs:
           OPERATION: ${{ inputs.operation }}
           TARGET_ID: ${{ inputs.target_id }}
           REACTION: ${{ inputs.reaction }}
+          REPLIES: ${{ inputs.replies }}
+          COMMENT_BODY: ${{ inputs.body }}
           REVIEW: ${{ inputs.review }}
           REVIEW_COMMENT_ID: ${{ inputs.review_comment_id }}
         shell: bash
@@ -73,6 +82,16 @@ jobs:
             fi
           elif [[ -n "$REVIEW" || -n "$REVIEW_COMMENT_ID" ]]; then
             printf '%s\n' 'Review JSON and review_comment_id are inputs for the publish action.' >&2
+            exit 1
+          fi
+
+          if [[ "$OPERATION" == 'reply_to_threads' ]]; then
+            if [[ -n "$TARGET_ID" || -n "$REACTION" || -n "$COMMENT_BODY" ]]; then
+              printf '%s\n' 'Pass batch messages in replies without body, target_id, or reaction.' >&2
+              exit 1
+            fi
+          elif [[ -n "$REPLIES" ]]; then
+            printf '%s\n' 'Select reply_to_threads to use replies.' >&2
             exit 1
           fi
 
@@ -166,8 +185,96 @@ jobs:
 
           gh api --method POST "$endpoint" --input - --jq '.html_url' <<< "$payload"
 
+      - name: Reply to review threads in a batch
+        if: inputs.operation == 'reply_to_threads'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PR_NUMBER: ${{ inputs.pr }}
+          REPLIES: ${{ inputs.replies }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          if ! replies=$(jq -cse '
+            def reply:
+              type == "object"
+              and (.review_comment_id | type == "string" and test("^[1-9][0-9]*$"))
+              and (.body | type == "string" and test("\\S"));
+            select(length == 1) | .[0]
+            | select(type == "array" and length > 0 and all(.[]; reply))
+            | select(map(.review_comment_id) | length == (unique | length))
+            | map({review_comment_id, body})
+          ' <<< "$REPLIES"); then
+            printf '%s\n' 'Pass a nonempty array of replies with unique string review_comment_id values and nonempty body text.' >&2
+            exit 1
+          fi
+
+          pr_endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"
+          comments=$(gh api "$pr_endpoint/comments?per_page=100" --paginate | jq -cs 'add // []')
+          plan=$(printf '%s\n' "$replies" "$comments" | jq -cs --arg bot "$APP_SLUG[bot]" '
+            def message: gsub("\r\n"; "\n") | sub("\n+$"; "");
+            . as [$replies, $comments]
+            | ($comments | map(select(.in_reply_to_id == null) | .id | tostring)) as $thread_ids
+            | ($comments | map(select(.user.login == $bot and .in_reply_to_id != null))) as $posted
+            | $replies | map(
+                . as $reply
+                | ($reply.body | message) as $body
+                | . + {
+                    valid: ($thread_ids | index($reply.review_comment_id) != null),
+                    existing_url: (first($posted[] | select(
+                      (.in_reply_to_id | tostring) == $reply.review_comment_id
+                      and (.body | message) == $body
+                    ) | .html_url) // "")
+                  }
+              )
+          ')
+
+          invalid_ids=$(jq -r 'map(select(.valid | not) | .review_comment_id) | join(", ")' <<< "$plan")
+          if [[ -n "$invalid_ids" ]]; then
+            printf 'Expected first comments of review threads on PR #%s. Invalid IDs: %s\n' \
+              "$PR_NUMBER" "$invalid_ids" >&2
+            exit 1
+          fi
+
+          printf '### Thread replies for PR #%s\n\n| Thread comment ID | Status | Link |\n| --- | --- | --- |\n' \
+            "$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+          failed=false
+          while IFS= read -r reply; do
+            id=$(jq -r '.review_comment_id' <<< "$reply")
+            url=$(jq -r '.existing_url' <<< "$reply")
+            if [[ -n "$url" ]]; then
+              status='Already posted'
+            elif [[ "$DRY_RUN" == 'true' ]]; then
+              status='Would post'
+            elif [[ "$failed" == 'true' ]]; then
+              status='Pending'
+            else
+              payload=$(jq -c '{body}' <<< "$reply")
+              if url=$(gh api --method POST "$pr_endpoint/comments/$id/replies" \
+                --input - --jq '.html_url // empty' <<< "$payload") && [[ -n "$url" ]]; then
+                status='Posted'
+                sleep 1
+              else
+                failed=true
+                status='Failed'
+              fi
+            fi
+
+            link='—'
+            if [[ -n "$url" ]]; then
+              link="[Reply]($url)"
+            fi
+            printf '| %s | %s | %s |\n' "$id" "$status" "$link" >> "$GITHUB_STEP_SUMMARY"
+            printf 'Thread %s %s %s\n' "$id" "$status" "$url"
+          done < <(jq -c '.[]' <<< "$plan")
+
+          if [[ "$failed" == 'true' ]]; then
+            printf '%s\n' 'Dispatch the same batch again to retry pending replies.' >&2
+            exit 1
+          fi
+
       - name: Edit a summary, resolve a thread, or react
-        if: inputs.operation != 'publish'
+        if: inputs.operation != 'publish' && inputs.operation != 'reply_to_threads'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}

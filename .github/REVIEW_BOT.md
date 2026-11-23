@@ -25,6 +25,7 @@ and commit SHA. GitHub validates the diff anchors when the review is submitted.
 | Operation | Other inputs |
 | --- | --- |
 | `publish` | `body`. Add `review_comment_id` for a thread reply or `review` for a complete review. |
+| `reply_to_threads` | A JSON array in `replies` with one `{review_comment_id, body}` object per thread. |
 | `edit_summary_comment` | The bot’s conversation comment ID in `target_id` and the new text in `body`. |
 | `edit_review_summary` | The bot’s review ID in `target_id` and the new text in `body`. Inline findings stay attached to that review. |
 | `resolve_thread` | The GraphQL review thread ID in `target_id`. Run after confirming the feedback has been addressed. |
@@ -34,6 +35,30 @@ and commit SHA. GitHub validates the diff anchors when the review is submitted.
 
 Reaction codes are `+1`, `-1`, `laugh`, `confused`, `heart`, `hooray`, `rocket`,
 and `eyes`.
+
+## Reply to several threads
+
+Use `reply_to_threads` to answer several threads on one PR. In `replies.json`,
+give each thread's first comment ID as a string and include the reply text.
+
+```json
+[
+  {"review_comment_id": "4658197241", "body": "The fixed-signature call now uses a typed alias."},
+  {"review_comment_id": "4658204315", "body": "The benchmark setup now lives in an HTML fixture."}
+]
+```
+
+```sh
+gh workflow run publish-pr-comment.yml --ref main \
+  -f pr=1 -f operation=reply_to_threads -F replies=@replies.json
+```
+
+Add `-f dry_run=true` to check all thread IDs without posting. The run summary
+shows the result and reply link for each thread. If publishing stops after an
+API error, dispatch the same batch again. The bot reuses links to matching
+replies it already posted and publishes the remaining ones.
+
+## Publish a complete review
 
 A complete review uses a JSON string for the `review` input. Use the current
 PR head SHA and line numbers in the changed file. Use `RIGHT` for the new side
