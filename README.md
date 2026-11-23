@@ -105,6 +105,8 @@ The functional gate builds the runtime and ZIP once. Native scenarios install th
 
 ### End-to-end test isolation
 
+For Chromium, install the pinned test browser with `pnpm exec playwright install chromium`, then run `pnpm run test:chromium`. The runner extracts the generated ZIP for a temporary browser profile and opens the real popup. It uses the same local HTML and WAV responses as the Firefox tests.
+
 The end-to-end tests use local HTML from `tests/native/fixtures/player.html` and WAV data from `tests/native/player-fixture.ts`. BiDi substitutes responses before navigation and aborts other HTTP(S) requests. The `www.youtube.com` and `soundcloud.com` domains serve as test origins. Service workers are disabled. GeckoDriver uses a temporary profile and terminates the processes it owns.
 
 The native WebdriverIO scenarios install the ZIP and load the real popup document while the music tab is active. They cover browser APIs, tab isolation, preferences, keyboard input, CORS, and audio output through the main route. On failure, the runner saves available screenshots, HTML, console output, driver logs, and the scenario step. Opening the popup from the toolbar and pressing its physical shortcut are manual checks.

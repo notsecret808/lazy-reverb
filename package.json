@@ -19,6 +19,7 @@
     "package": "node --import tsx tools/package.ts",
     "test": "node --import tsx tools/test.ts native",
     "test:unit": "node --import tsx tools/test.ts unit",
+    "test:chromium": "node --import tsx --test tests/chromium/behavior.test.ts",
     "check": "node --import tsx tools/test.ts check",
     "check:perf": "node --import tsx tools/performance.ts",
     "live:probe": "node --import tsx tools/live-probe.ts",

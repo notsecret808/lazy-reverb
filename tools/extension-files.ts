@@ -15,7 +15,7 @@ function manifestObject(json: string): Record<string, unknown> {
   return result;
 }
 
-function localPath(value: unknown): string {
+export function localPath(value: unknown): string {
   if (typeof value === "string" && /^\/?[\w.-]+(?:\/[\w.-]+)*$/.test(value) && !/(^|\/)\.{1,2}(\/|$)/.test(value)) {
     return value.replace(/^\//, "");
   }
