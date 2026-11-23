@@ -11,6 +11,10 @@ on:
         description: Comment text (required when publishing)
         required: false
         type: string
+      review_comment_id:
+        description: Review thread's first comment ID (omit for a general PR comment)
+        required: false
+        type: string
       dry_run:
         description: Verify GitHub App access without posting a comment
         default: false
@@ -37,6 +41,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_NUMBER: ${{ inputs.pr }}
           COMMENT_BODY: ${{ inputs.body }}
+          REVIEW_COMMENT_ID: ${{ inputs.review_comment_id }}
           DRY_RUN: ${{ inputs.dry_run }}
         shell: bash
         run: |
@@ -46,8 +51,27 @@ jobs:
           fi
 
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --silent
+          endpoint="repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"
+          target="PR #$PR_NUMBER"
+          if [[ -n "$REVIEW_COMMENT_ID" ]]; then
+            if [[ ! "$REVIEW_COMMENT_ID" =~ ^[1-9][0-9]*$ ]]; then
+              printf '%s\n' 'Expected a positive review comment ID.' >&2
+              exit 1
+            fi
+
+            review_comment=$(gh api "repos/$GITHUB_REPOSITORY/pulls/comments/$REVIEW_COMMENT_ID")
+            if ! jq -e --arg pr_url "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+              '.pull_request_url == $pr_url and .in_reply_to_id == null' >/dev/null <<< "$review_comment"; then
+              printf '%s\n' 'The review comment must be the first comment of a thread on the selected PR.' >&2
+              exit 1
+            fi
+
+            endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/comments/$REVIEW_COMMENT_ID/replies"
+            target="review thread #$REVIEW_COMMENT_ID on $target"
+          fi
+
           if [[ "$DRY_RUN" == 'true' ]]; then
-            printf 'GitHub App access verified for PR #%s.\n' "$PR_NUMBER"
+            printf 'GitHub App access verified for %s.\n' "$target"
             exit 0
           fi
 
@@ -56,5 +80,5 @@ jobs:
             exit 1
           fi
 
-          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+          gh api --method POST "$endpoint" \
             --raw-field "body=$COMMENT_BODY" --jq '.html_url'
