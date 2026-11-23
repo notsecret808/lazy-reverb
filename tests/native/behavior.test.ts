@@ -173,10 +173,29 @@ await test("the hidden SoundCloud graph outputs audio in dry, bass, wet, and res
     await fixture.click(panel, "#enabled");
     await fixture.wait(page, `window.outputPeak() > ${before * 1.35} && __lazyReverb.get().graphCount === 1 && player.playbackRate === 1`);
     await fixture.slider(panel, "mix", 1);
-    await fixture.wait(page, "window.outputPeak() > 0.003 && window.impulses.some(node => node.buffer !== null) && __lazyReverb.get().mix === 1");
-    await fixture.wait(page, "(async () => { player.pause(); await new Promise(resolve => setTimeout(resolve, 130)); return window.outputPeak() > 0.001; })()");
+    await fixture.wait(page, "window.impulses.some(node => node.buffer !== null) && __lazyReverb.get().mix === 1");
+    const wetStart = await fixture.read(page, "siteContext.currentTime");
+    assert(typeof wetStart === "number");
+    await fixture.wait(page, `siteContext.currentTime >= ${wetStart} + 0.2 && window.outputPeak() > 0.001`);
+    const tailPeak = await fixture.read(page, `(async () => {
+      player.pause();
+      siteSource.disconnect(siteContext.destination);
+      const stoppedAt = siteContext.currentTime;
+      const deadline = performance.now() + 3000;
+      let peak = 0;
+      while (performance.now() < deadline) {
+        const elapsed = siteContext.currentTime - stoppedAt;
+        if (elapsed > 0.35) return peak;
+        // Let the analyser's last input samples fall out of its history.
+        if (elapsed >= 0.1) peak = Math.max(peak, window.outputPeak());
+        await new Promise(resolve => setTimeout(resolve, 15));
+      }
+      throw new Error('The audio clock did not advance through the tail measurement window');
+    })()`);
+    assert(typeof tailPeak === "number" && tailPeak > 0.001, `Expected a reverb tail after disconnecting the source, got ${String(tailPeak)}`);
     await fixture.click(panel, "#enabled");
     await fixture.wait(page, "window.impulses.every(node => node.buffer === null) && siteContext.state === 'running'");
+    await fixture.read(page, "void siteSource.connect(siteContext.destination)");
     await fixture.play(page);
     await fixture.wait(page, `window.outputPeak() > ${before * 0.7} && player.playbackRate === 1.25 && __lazyReverb.get().graphCount === 1`);
     assert(await peak() < before * 1.3);
