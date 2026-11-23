@@ -51,7 +51,11 @@ permissions: {}
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main' && github.actor == 'notsecret808' && github.run_attempt == '1'
+    if: >-
+      github.ref == 'refs/heads/main'
+      && github.run_attempt == '1'
+      && github.actor_id != ''
+      && github.actor_id == github.repository_owner_id
     runs-on: ubuntu-latest
     environment: pr-comment-bot
     concurrency:

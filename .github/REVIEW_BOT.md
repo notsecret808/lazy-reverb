@@ -88,12 +88,16 @@ gh workflow run publish-pr-comment.yml --ref main \
 
 ## Credentials and forks
 
-The publishing job runs on `main` for `notsecret808`. The `pr-comment-bot`
-environment supplies the GitHub App client ID and private key. The token action
-uses them to mint a short-lived installation token scoped to this repository.
+The publishing job runs only on the first attempt on `main` when the caller's
+GitHub account ID matches the repository owner's ID. A collaborator with write
+access can request a workflow run. The owner check controls whether its job
+starts. The `pr-comment-bot` environment supplies the GitHub App client ID and
+private key. The token action uses them to mint a short-lived installation
+token scoped to this repository.
 The job uses that token to call GitHub through `gh` and revokes it at the end.
 The workflow has no Codex or OpenAI API credentials.
 
-A fork copies this workflow file. Its owner can adapt the actor condition and
-set up an environment with a separate GitHub App installed on the fork.
+A fork copies this workflow file. The same check uses the fork owner's ID in
+the fork and expects a user-owned repository. Its owner can set up an
+environment with a separate GitHub App installed on the fork.
 GitHub keeps the original environment secrets in the original repository.
