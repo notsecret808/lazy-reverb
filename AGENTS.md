@@ -81,3 +81,10 @@ CI запускает модульные тесты, Playwright и упаков�
 Делайте отдельные логические коммиты в формате Conventional Commits: `feat:`, `fix:`, `test:`, `docs:`, `chore:`. Описание должно называть изменение поведения. Не включайте зависимости, сборки и локальные отчёты. Версии `manifest.json`, `package.json` и корневых метаданных `package-lock.json` должны совпадать в готовой сборке.
 
 Пишите документацию на русском языке, с точными названиями API и ограничениями проверок. Изменение поведения сопровождайте обновлением соответствующего раздела README и архитектурных инвариантов. Лицензию и публикацию подписанного дополнения согласовывайте отдельно от публикации исходников.
+
+## Code Review Rules
+
+- Put the overall assessment, checks run, and remaining work in the review summary or a general PR comment.
+- Put actionable findings on the relevant lines in the diff. Explain what can go wrong, when it happens, and how to fix it.
+- Answer existing feedback in its review thread. Link to the commit that addresses it when available.
+- When asked to publish through the GitHub App, follow the [review bot guide](.github/REVIEW_BOT.md).
