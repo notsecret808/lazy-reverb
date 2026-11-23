@@ -22,7 +22,9 @@ To load an unpacked build, run `pnpm run build` and choose its manifest instead.
 4. Refresh your music tabs, start playback, and open **Lazy Reverb** from the extensions menu.
 5. Select **Lazy** or switch on **Audio effects** and adjust the sliders.
 
-The current version is **0.3.0**. After updating the source, rebuild, select **Reload** for the add-on in `about:debugging`, and refresh your music tabs.
+The current version is **0.3.0**. For a directory installation, run `pnpm run build` after updating and select **Reload** in `about:debugging`. For a ZIP installation, run `pnpm run package` and select the fresh archive through **Load Temporary Add-on…**. Then refresh your music tabs.
+
+If you installed the extension from the repository root before the TypeScript migration, Zen still loads the popup from that directory. The scripts now live in `dist/firefox/`, so the old popup stalls at its connecting message. In `about:debugging`, select **Load Temporary Add-on…** and choose `dist/firefox/manifest.json` after building or `dist/lazy-reverb-0.3.0.zip` after packaging. Then refresh your music tab.
 
 Temporary add-ons are removed when the browser restarts. Permanent installation requires Mozilla signing.
 
@@ -51,7 +53,7 @@ The extension has no background process, network requests, analytics, timer poll
 
 The bass and convolution nodes are created on demand. At 0 dB bass, the filter is disconnected. At 0% reverb, the convolution branch is disconnected and its buffer is released. Turning effects off restores the original rate and pitch setting and bypasses both DSP branches. Playback-rate changes alone need no `AudioContext` for an ordinary media player.
 
-After a player is routed into Web Audio, a dry path keeps it audible. Browsers allow one `MediaElementAudioSourceNode` per element, and suspending its context would mute it. Reload a page after removing or disabling the extension to unload its injected engine.
+After a player is routed into Web Audio, a unity-gain dry path keeps it audible. The input uses the output's channel settings at connection time so mono and surround sources mix as they do at the browser output. Browsers allow one `MediaElementAudioSourceNode` per element, and suspending its context would mute it. Reload a page after removing or disabling the extension to unload its injected engine.
 
 Players and contexts are tracked through weak references. For paused players removed from the DOM, the engine restores the original settings and disconnects any extension-owned source. A detached `new Audio()` that is still playing stays active. Cleanup preserves site-owned contexts and sources.
 

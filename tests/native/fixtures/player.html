@@ -18,15 +18,19 @@
     if (hidden) {
       window.siteContext = new AudioContext();
       const nativeOutput = siteContext.destination;
-      const observedOutput = siteContext.createGain();
+      const observedOutput = new GainNode(siteContext, {
+        channelCount: nativeOutput.channelCount,
+        channelCountMode: nativeOutput.channelCountMode,
+        channelInterpretation: nativeOutput.channelInterpretation,
+      });
       const analyser = siteContext.createAnalyser();
       // Place the analyser in the actual output path for this fixture.
       Object.defineProperty(siteContext, 'destination', {value: observedOutput});
       observedOutput.connect(analyser);
       analyser.connect(nativeOutput);
-      window.outputPeak = () => {
-        const samples = new Float32Array(analyser.fftSize);
-        analyser.getFloatTimeDomainData(samples);
+      window.outputPeak = (meter = analyser) => {
+        const samples = new Float32Array(meter.fftSize);
+        meter.getFloatTimeDomainData(samples);
         return samples.reduce((peak, value) => Math.max(peak, Math.abs(value)), 0);
       };
       window.impulses = [];

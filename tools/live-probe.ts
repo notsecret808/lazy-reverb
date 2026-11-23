@@ -20,7 +20,7 @@ if (options) {
           media: [...document.querySelectorAll('audio,video')].map(m => ({paused:m.paused,ready:m.readyState,time:m.currentTime,error:m.error?.code})),
           buttons: [...document.querySelectorAll('button')]
             .map(b => ({text:b.innerText.slice(0,80),label:b.getAttribute('aria-label'),title:b.title,class:b.className}))
-            .filter(b => /play|воспро|accept|принять|reject|отклон|consent|agree/i.test(b.text+' '+b.label+' '+b.title)).slice(0,20)
+            .filter(b => /play|accept|reject|consent|agree/i.test(b.text+' '+b.label+' '+b.title+' '+b.class)).slice(0,20)
         })`);
         rows.push({ requested_url: url, state });
         await session.client.browsingContextClose({ context });

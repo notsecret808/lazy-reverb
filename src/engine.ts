@@ -179,13 +179,19 @@ interface Rack {
   function getRack(context: AudioContext): Rack {
     const previous = racks.get(context);
     if (previous) return previous;
+    const destination = context.destination;
+    const input = context.createGain();
+    // Apply the destination's channel rules to each connection before summing.
+    input.channelCount = destination.channelCount;
+    input.channelCountMode = destination.channelCountMode;
+    input.channelInterpretation = destination.channelInterpretation;
     const rack: Rack = {
-      input: context.createGain(), dry: context.createGain(),
+      input, dry: context.createGain(),
       wetActive: false, bassActive: false
     };
     // Native calls keep our own output connections out of the interception hook.
     connectNodes(rack.input, rack.dry);
-    connectNodes(rack.dry, context.destination);
+    connectNodes(rack.dry, destination);
     racks.set(context, rack);
     rackRefs.add(new WeakRef(context));
     updateRack(context, rack);
