@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,27 +8,27 @@
   <script src="popup.js" defer></script>
 </head>
 <body>
-  <header><span class="logo" aria-hidden="true">≈</span><div><h1>Lazy Reverb</h1><p>медленнее · быстрее · глубже</p></div></header>
+  <header><span class="logo" aria-hidden="true">≈</span><div><h1>Lazy Reverb</h1><p>slower · faster · deeper</p></div></header>
   <main>
-    <div class="power-row"><label for="enabled">Аудиоэффекты</label><input id="enabled" type="checkbox" role="switch" disabled></div>
+    <div class="power-row"><label for="enabled">Audio effects</label><input id="enabled" type="checkbox" role="switch" disabled></div>
     <fieldset id="controls" disabled>
-      <label for="rate">Скорость <output id="rate-value" for="rate">0,85×</output></label>
+      <label for="rate">Speed <output id="rate-value" for="rate">0.85×</output></label>
       <input id="rate" type="range" min="0.5" max="2" step="0.01" value="0.85">
-      <p class="hint">Скорость меняется вместе с высотой тона.</p>
-      <label for="mix">Реверберация <output id="mix-value" for="mix">25 %</output></label>
-      <input id="mix" type="range" min="0" max="1" step="0.01" value="0.25" aria-description="При 100 % слышен только обработанный звук.">
-      <label class="bass-label" for="bass">Бас-буст <output id="bass-value" for="bass">0 дБ</output></label>
+      <p class="hint">Pitch changes with playback speed.</p>
+      <label for="mix">Reverb <output id="mix-value" for="mix">25 %</output></label>
+      <input id="mix" type="range" min="0" max="1" step="0.01" value="0.25" aria-description="At 100%, you hear only the reverberated signal.">
+      <label class="bass-label" for="bass">Bass boost <output id="bass-value" for="bass">0 dB</output></label>
       <input id="bass" type="range" min="0" max="12" step="1" value="0" aria-describedby="bass-hint">
-      <p class="hint" id="bass-hint">Без снижения громкости: возможен перегруз.</p>
-      <div class="presets" aria-label="Готовые настройки">
-        <button type="button" data-rate="0.92" data-mix="0.15">Мягко</button>
-        <button type="button" data-rate="0.85" data-mix="0.25">Лениво</button>
-        <button type="button" data-rate="0.75" data-mix="0.4">Глубоко</button>
-        <button type="button" data-rate="1.25" data-mix="0">Быстрее</button>
+      <p class="hint" id="bass-hint">Boost can cause clipping at high levels.</p>
+      <div class="presets" aria-label="Presets">
+        <button type="button" data-rate="0.92" data-mix="0.15">Soft</button>
+        <button type="button" data-rate="0.85" data-mix="0.25">Lazy</button>
+        <button type="button" data-rate="0.75" data-mix="0.4">Deep</button>
+        <button type="button" data-rate="1.25" data-mix="0">Faster</button>
       </div>
     </fieldset>
-    <p id="status" role="status" aria-live="polite">Подключение к вкладке…</p>
+    <p id="status" role="status" aria-live="polite">Connecting to the tab…</p>
   </main>
-  <footer><span id="shortcut" role="status">Проверяем сочетание…</span><button id="shortcut-reset" type="button">Назначить Ctrl+Shift+F8</button></footer>
+  <footer><span id="shortcut" role="status">Checking the shortcut…</span><button id="shortcut-reset" type="button">Assign Ctrl+Shift+F8</button></footer>
 </body>
 </html>

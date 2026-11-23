@@ -1,0 +1,8 @@
+packages: []
+
+allowBuilds:
+  edgedriver: false
+  esbuild: false
+  geckodriver: false
+verifyDepsBeforeRun: error
+pmOnFail: error

@@ -1,52 +1,102 @@
-const { test } = require('node:test');
-const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
-const vm = require('node:vm');
-const code = readFileSync(`${__dirname}/../engine.js`, 'utf8');
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import type { EffectState } from "../src/engine-api.js";
 
-function fixture() {
-  const contexts = [];
+const code = readFileSync(new URL("../dist/firefox/engine.js", import.meta.url), "utf8");
+
+function fixture(sourceCode = code) {
+  const contexts: Context[] = [];
   class Param {
     value = 1;
     cancelScheduledValues() {}
-    setTargetAtTime(value) { this.value = value; }
+    setTargetAtTime(value: number) { this.value = value; }
   }
   class Node {
-    constructor(context) { this.context = context; this.connections = []; this.gain = new Param(); }
-    connect(...args) { this.connections.push(args); return args[0]; }
-    disconnect(...args) {
+    connections: [Node, number?, number?][] = [];
+    disconnected: unknown[] = [];
+    gain = new Param();
+    constructor(readonly context: object) {}
+    connect(...args: [Node, number?, number?]) { this.connections.push(args); return args[0]; }
+    disconnect(...args: [Node, number?, number?] | [number] | []) {
       this.disconnected = args;
-      this.connections = args.length ? this.connections.filter(connection => connection[0] !== args[0]) : [];
+      const [target, output, input] = args;
+      if (args.length === 0) {
+        this.connections = [];
+      } else {
+        this.connections = this.connections.filter(([node, out = 0, into = 0]) => {
+          if (typeof target === "number") return target !== out;
+          return target !== node || (output !== undefined && output !== out) || (input !== undefined && input !== into);
+        });
+      }
     }
   }
+  interface Impulse {
+    getChannelData(channel: number): Float32Array;
+    length: number;
+    sampleRate: number;
+  }
+  class Convolver extends Node { buffer: Impulse | null = null; }
+  class Filter extends Node { frequency = new Param(); type = ""; }
+  const sourceOwners = new WeakSet<Media>();
   class Context {
-    constructor() { this.destination = new Node(this); this.currentTime = 0; this.sampleRate = 1000; this.state = 'running'; this.sources = []; this.convolvers = []; this.filters = []; contexts.push(this); }
+    destination = new Node(this);
+    currentTime = 0;
+    sampleRate = 1000;
+    state = "running";
+    sources: { element: Media; source: Node }[] = [];
+    convolvers: Convolver[] = [];
+    filters: Filter[] = [];
+    constructor() { contexts.push(this); }
     createGain() { return new Node(this); }
-    createConvolver() { const node = new Node(this); node.buffer = null; this.convolvers.push(node); return node; }
-    createBiquadFilter() { const node = new Node(this); node.frequency = new Param(); this.filters.push(node); return node; }
-    createBuffer(channels, size, rate) { const data = Array.from({ length: channels }, () => new Float32Array(size)); return { getChannelData: c => data[c], length: size, sampleRate: rate }; }
-    createMediaElementSource(element) { const source = new Node(this); this.sources.push({ element, source }); return source; }
-    resume() { this.state = 'running'; return Promise.resolve(); }
+    createConvolver() { const node = new Convolver(this); this.convolvers.push(node); return node; }
+    createBiquadFilter() { const node = new Filter(this); this.filters.push(node); return node; }
+    createBuffer(channels: number, size: number, rate: number): Impulse {
+      const data = Array.from({ length: channels }, () => new Float32Array(size));
+      return { getChannelData: c => data[c], length: size, sampleRate: rate };
+    }
+    createMediaElementSource(element: Media) {
+      if (sourceOwners.has(element)) throw new Error("HTML media can only be sourced once");
+      sourceOwners.add(element);
+      const source = new Node(this);
+      this.sources.push({ element, source });
+      return source;
+    }
+    resume() { this.state = "running"; return Promise.resolve(); }
   }
   class Media {
-    constructor(src = 'https://www.youtube.com/audio') { this.src = src; this.currentSrc = src; this.crossOrigin = null; this.preservesPitch = true; this.playbackRate = 1; this.events = {}; }
-    addEventListener(name, fn) { this.events[name] = fn; }
+    currentSrc: string;
+    crossOrigin: string | null = null;
+    preservesPitch = true;
+    playbackRate = 1;
+    paused = false;
+    isConnected = false;
+    played = false;
+    mediaKeys: object | null = null;
+    events: Record<string, () => void> = {};
+    constructor(readonly src = "https://www.youtube.com/audio") { this.currentSrc = src; }
+    addEventListener(name: string, fn: () => void) { this.events[name] = fn; }
     play() { this.played = true; this.paused = false; return Promise.resolve(); }
   }
-  const elements = [];
+  const elements: Media[] = [];
   const stats = { scans: 0 };
-  const events = {};
-  const document = { querySelectorAll: () => { stats.scans++; return elements; }, addEventListener(name, fn) { events[name] = fn; } };
-  const scope = {
-    window: {}, document, AudioNode: Node, AudioContext: Context, HTMLMediaElement: Media,
-    location: { href: 'https://www.youtube.com/watch?v=test', origin: 'https://www.youtube.com' }, URL,
-    MutationObserver: class { constructor() { throw Error('DOM observation is not needed'); } }
+  const events: Record<string, (event: { target: Media }) => void> = {};
+  const document = {
+    querySelectorAll: () => { stats.scans++; return elements; },
+    addEventListener(name: string, fn: (event: { target: Media }) => void) { events[name] = fn; },
   };
-  vm.runInNewContext(code, scope);
-  return { api: scope.window.__lazyReverb, elements, Media, Context, Node, stats, events, contexts };
+  const window: { __lazyReverb?: { get(): EffectState; set(options: unknown): EffectState } } = {};
+  vm.runInNewContext(sourceCode, {
+    window, document, AudioNode: Node, AudioContext: Context, HTMLMediaElement: Media,
+    location: { href: "https://www.youtube.com/watch?v=test", origin: "https://www.youtube.com" }, URL,
+    MutationObserver: class { constructor() { throw Error("DOM observation is not needed"); } },
+  });
+  assert(window.__lazyReverb);
+  return { api: window.__lazyReverb, elements, Media, Context, Node, stats, events, contexts };
 }
 
-test('off by default; enabling lowers pitch; bypass restores the original media settings', () => {
+await test('off by default; enabling lowers pitch; bypass restores the original media settings', () => {
   const { api, elements, Media } = fixture();
   const media = new Media(); media.playbackRate = 1.25; media.preservesPitch = true; elements.push(media);
   assert.equal(api.get().enabled, false);
@@ -59,7 +109,7 @@ test('off by default; enabling lowers pitch; bypass restores the original media 
   assert.equal(media.playbackRate, 1.25);
 });
 
-test('unsafe cross-origin audio is never routed or reloaded, but slowing works', () => {
+await test('unsafe cross-origin audio is never routed or reloaded, but slowing works', () => {
   const { api, elements, Media } = fixture();
   const media = new Media('https://cdn.example/track.mp3'); elements.push(media);
   const state = api.set({ enabled: true });
@@ -67,7 +117,7 @@ test('unsafe cross-origin audio is never routed or reloaded, but slowing works',
   assert.equal(media.playbackRate, 0.85); assert.equal(media.src, 'https://cdn.example/track.mp3');
 });
 
-test('detached Audio-style players are found through play and sourced only once', async () => {
+await test('detached Audio-style players are found through play and sourced only once', async () => {
   const { api, Media } = fixture();
   api.set({ enabled: true });
   const media = new Media('https://cdn.example/track.mp3'); media.crossOrigin = 'anonymous';
@@ -77,7 +127,7 @@ test('detached Audio-style players are found through play and sourced only once'
   assert.equal(api.get().blockedCount, 0); assert.equal(media.playbackRate, 0.85);
 });
 
-test('a player first blocked by CORS can later join a site-owned graph', () => {
+await test('a player first blocked by CORS can later join a site-owned graph', () => {
   const { api, elements, Media, Context } = fixture();
   const player = new Media('https://cdn.example/audio'); elements.push(player);
   assert.equal(api.set({ enabled: true }).blockedCount, 1);
@@ -86,7 +136,7 @@ test('a player first blocked by CORS can later join a site-owned graph', () => {
   assert.equal(api.get().blockedCount, 0);
 });
 
-test('site-owned Web Audio graph uses a single rack and preserves connect/disconnect ports', () => {
+await test('site-owned Web Audio graph uses a single rack and preserves connect/disconnect ports', () => {
   const { api, Context, Node, Media } = fixture();
   const ctx = new Context(); const player = new Media();
   const source = ctx.createMediaElementSource(player);
@@ -99,17 +149,22 @@ test('site-owned Web Audio graph uses a single rack and preserves connect/discon
   assert.equal(source.disconnected[0], input); assert.deepEqual(source.disconnected.slice(1), [1, 0]);
   source.disconnect(0); assert.deepEqual(source.disconnected, [0]);
   source.connect(ctx.destination);
-  assert.equal(source.connections.at(-1)[0], input);
+  assert.equal(source.connections.at(-1)?.[0], input);
   api.set({ enabled: true });
   assert.equal(ctx.sources.length, 1); assert.equal(api.get().graphCount, 1);
-  assert.equal(ctx.convolvers[0].buffer.length, 2800);
+  assert.equal(ctx.convolvers[0].buffer?.length, 2800);
   const dry = input.connections[0][0]; const wet = ctx.convolvers[0].connections[0][0];
   assert.equal(dry.gain.value, 0.75); assert.equal(wet.gain.value, 0.25);
+  assert.deepEqual(dry.connections, [[ctx.destination]]);
+  assert.deepEqual(wet.connections, [[ctx.destination]]);
   api.set({ enabled: false });
   assert.equal(dry.gain.value, 1); assert.equal(wet.gain.value, 0);
+  assert.deepEqual(input.connections, [[dry]]);
+  assert.deepEqual(dry.connections, [[ctx.destination]]);
+  assert.deepEqual(wet.connections, []);
 });
 
-test('new SPA media and player rate resets receive the active settings on play', async () => {
+await test('new SPA media and player rate resets receive the active settings on play', async () => {
   const { api, Media, events } = fixture();
   api.set({ enabled: true, rate: 0.77 });
   const media = new Media(); await media.play();
@@ -122,18 +177,18 @@ test('new SPA media and player rate resets receive the active settings on play',
   assert.equal(autoplay.playbackRate, 0.77);
 });
 
-test('settings reject invalid types, clamp numbers, and leave offline graphs alone', () => {
+await test('settings reject invalid types, clamp numbers, and leave offline graphs alone', () => {
   const { api, Node } = fixture();
   api.set({ enabled: 'yes', rate: NaN, mix: Infinity, bass: 'loud' });
   assert.equal(api.get().enabled, false); assert.equal(api.get().rate, 0.85); assert.equal(api.get().mix, 0.25); assert.equal(api.get().bass, 0);
   api.set({ rate: -2, mix: 9, bass: 99 });
   assert.equal(api.get().rate, 0.5); assert.equal(api.get().mix, 1); assert.equal(api.get().bass, 12);
-  const offline = {}; offline.destination = new Node(offline);
+  const offline: {destination?: InstanceType<typeof Node>} = {}; offline.destination = new Node(offline);
   const source = new Node(offline); source.connect(offline.destination);
   assert.equal(source.connections[0][0], offline.destination);
 });
 
-test('idle mode has no DOM observer, scans, filter, or convolver; rate-only mode stays cheap', () => {
+await test('idle mode has no DOM observer, scans, filter, or convolver; rate-only mode stays cheap', () => {
   const { api, Context, Node, stats } = fixture();
   assert.equal(stats.scans, 0);
   api.set({ rate: 0.9, bass: 6 });
@@ -149,7 +204,7 @@ test('idle mode has no DOM observer, scans, filter, or convolver; rate-only mode
   assert.equal(stats.scans, 1);
 });
 
-test('speed-only media does not create a Web Audio context or warn about CORS', () => {
+await test('speed-only media does not create a Web Audio context or warn about CORS', () => {
   const { api, elements, Media } = fixture();
   elements.push(new Media('https://cdn.example/track.mp3'));
   const state = api.set({ enabled: true, mix: 0, bass: 0, rate: 0.9 });
@@ -159,7 +214,7 @@ test('speed-only media does not create a Web Audio context or warn about CORS', 
   assert.equal(api.set({ bass: 0 }).blockedCount, 0);
 });
 
-test('bass boosts without attenuation; disabling disconnects FX and frees the impulse', () => {
+await test('bass boosts without attenuation; disabling disconnects FX and frees the impulse', () => {
   const { api, Context, Node } = fixture();
   const ctx = new Context(); const source = new Node(ctx); source.connect(ctx.destination);
   const input = source.connections[0][0];
@@ -188,7 +243,7 @@ test('bass boosts without attenuation; disabling disconnects FX and frees the im
   assert.equal(input.connections[0][0], dry);
 });
 
-test('repeated toggles and slider changes keep one source and a bounded graph', () => {
+await test('repeated toggles and slider changes keep one source and a bounded graph', () => {
   const { api, Context, Media, stats } = fixture();
   const ctx = new Context(); const player = new Media(); player.playbackRate = 1.25;
   const source = ctx.createMediaElementSource(player); source.connect(ctx.destination);
@@ -209,7 +264,7 @@ test('repeated toggles and slider changes keep one source and a bounded graph', 
   assert.equal(ctx.filters[0].connections.length, 0); assert.equal(player.playbackRate, 1.25);
 });
 
-test('speed up and full wet mix work, clamp safely and restore original media settings', () => {
+await test('speed up and full wet mix work, clamp safely and restore original media settings', () => {
   const { api, elements, Media, Context, Node } = fixture();
   const player = new Media(); player.playbackRate = 1.1; elements.push(player);
   const context = new Context(); const source = new Node(context); source.connect(context.destination);
@@ -223,7 +278,7 @@ test('speed up and full wet mix work, clamp safely and restore original media se
   assert.equal(dry.gain.value, 1); assert.equal(context.convolvers[0].buffer, null);
 });
 
-test('retired detached players restore settings, disconnect owned sources and can replay while off', async () => {
+await test('retired detached players restore settings, disconnect owned sources and can replay while off', async () => {
   const { api, Media, contexts } = fixture();
   api.set({ enabled: true, rate: 0.7, bass: 6 });
   const player = new Media(); player.isConnected = false; player.playbackRate = 1.25;
@@ -243,7 +298,7 @@ test('retired detached players restore settings, disconnect owned sources and ca
   assert.equal(player.playbackRate, 0.7); assert.equal(context.sources.length, 1);
 });
 
-test('playing detached Audio stays tracked; retired site sources are not disconnected', async () => {
+await test('playing detached Audio stays tracked; retired site sources are not disconnected', async () => {
   const { api, Media, Context } = fixture();
   const player = new Media(); player.isConnected = false; player.paused = false;
   const context = new Context(); const source = context.createMediaElementSource(player);
@@ -255,7 +310,9 @@ test('playing detached Audio stays tracked; retired site sources are not disconn
   context.state = 'closed'; assert.equal(api.get().graphCount, 0);
 });
 
-test('registry allows abandoned media and site contexts to be garbage collected', { skip: !global.gc }, async () => {
+await test('registry allows abandoned media and site contexts to be garbage collected', async () => {
+  const collect = global.gc;
+  assert(collect, "GC tests require --expose-gc");
   const { api, Media, Context, Node, contexts } = fixture();
   async function abandonMedia() {
     const player = new Media('https://cdn.example/audio'); await player.play(); return new WeakRef(player);
@@ -266,10 +323,29 @@ test('registry allows abandoned media and site contexts to be garbage collected'
   }
   const playerRef = await abandonMedia(); const contextRef = abandonContext();
   for (let i = 0; i < 10; i++) {
-    await new Promise(resolve => setImmediate(resolve)); global.gc();
+    await new Promise(resolve => setImmediate(resolve)); collect();
     await new Promise(resolve => setImmediate(resolve));
     if (!playerRef.deref() && !contextRef.deref()) break;
   }
   assert.equal(playerRef.deref(), undefined); assert.equal(contextRef.deref(), undefined);
   assert.equal(api.get().mediaCount, 0); assert.equal(api.get().graphCount, 0);
+});
+
+await test("DRM leaves the original audio route intact and allows speed changes", () => {
+  const { api, elements, Media, contexts } = fixture();
+  const player = new Media();
+  player.mediaKeys = {};
+  elements.push(player);
+  assert.equal(api.set({ enabled: true, rate: 0.9, mix: 0.4 }).blockedCount, 1);
+  assert.equal(player.playbackRate, 0.9);
+  assert.equal(contexts.length, 0);
+});
+
+await test("connect preserves the native result for nodes from another JavaScript realm", () => {
+  const { Node } = fixture();
+  const other = fixture();
+  const context = new other.Context();
+  const source = new other.Node(context);
+  const target = new other.Node(context);
+  assert.equal(Node.prototype.connect.call(source, target), target);
 });

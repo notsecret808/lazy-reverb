@@ -11,26 +11,62 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      FIREFOX_VERSION: '159.0'
+      GECKODRIVER_VERSION: '0.37.1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: npm ci
-      - run: npx playwright install --with-deps firefox
-      - run: npm run test:unit
-      - run: python3 -m unittest discover -s tests -p test_performance_gate.py
-      - run: npm test
-      - run: python3 tools/package.py
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: browser-test-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Type-aware lint
+        run: pnpm run lint
+      - name: TypeScript typecheck
+        run: pnpm run typecheck
+      - name: Check commit messages and OpenSpec boundary
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          FALLBACK: origin/${{ github.event.repository.default_branch }}
+        run: |
+          # A force-push can make the previous tip unreachable from the fetched refs.
+          if [[ ! "$BASE" =~ ^0+$ ]] && ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$BASE"
+          fi
+          pnpm run check:commits --base "$BASE" --head "$HEAD" --fallback "$FALLBACK"
+      - name: Install Firefox and GeckoDriver
+        run: |
+          mkdir -p dist/ci-browser
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://archive.mozilla.org/pub/firefox/releases/$FIREFOX_VERSION/linux-x86_64/en-US/firefox-$FIREFOX_VERSION.tar.xz" \
+            -o dist/ci-browser/firefox.tar.xz
+          tar -xJf dist/ci-browser/firefox.tar.xz -C dist/ci-browser
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/mozilla/geckodriver/releases/download/v$GECKODRIVER_VERSION/geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz" \
+            -o dist/ci-browser/geckodriver.tar.gz
+          tar -xzf dist/ci-browser/geckodriver.tar.gz -C dist/ci-browser geckodriver
+          dist/ci-browser/firefox/firefox --version
+          dist/ci-browser/geckodriver --version
+      - name: Install virtual audio output dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends dbus-daemon pulseaudio pulseaudio-utils
+      - name: Unit, native Firefox and ZIP checks
+        run: |
+          dbus-run-session -- bash -euc '
+            audio_dir=$(mktemp -d "$RUNNER_TEMP/audio.XXXXXX")
+            export PULSE_RUNTIME_PATH="$audio_dir"
+            export PULSE_SERVER="unix:$audio_dir/native"
+            pulseaudio -n --daemonize=yes --exit-idle-time=-1 --use-pid-file=no --fail=yes \
+              --load="module-native-protocol-unix socket=$audio_dir/native auth-cookie-enabled=no" \
+              --load="module-null-sink sink_name=lazy_reverb_ci rate=48000"
+            trap "pactl exit >/dev/null 2>&1 || true" EXIT
+            pactl set-default-sink lazy_reverb_ci
+            node --import tsx tools/test.ts ci --browser "$PWD/dist/ci-browser/firefox/firefox" --driver "$PWD/dist/ci-browser/geckodriver"
+          '

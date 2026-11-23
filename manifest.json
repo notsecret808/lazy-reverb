@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Lazy Reverb",
   "version": "0.3.0",
-  "description": "Slowed + reverb и бас-буст для YouTube и SoundCloud в Zen Browser и Firefox. Обработка на устройстве.",
+  "description": "Slowed playback, reverb, and bass boost for YouTube and SoundCloud in Zen Browser and Firefox. Audio is processed on your device.",
   "permissions": ["scripting", "storage"],
   "host_permissions": ["https://*.youtube.com/*", "https://soundcloud.com/*", "https://www.soundcloud.com/*"],
   "browser_specific_settings": {
@@ -17,7 +17,7 @@
   "commands": {
     "_execute_action": {
       "suggested_key": { "default": "Ctrl+Shift+F8" },
-      "description": "Открыть Lazy Reverb"
+      "description": "Open Lazy Reverb"
     }
   },
   "content_scripts": [{

@@ -2,14 +2,41 @@
   "name": "lazy-reverb",
   "version": "0.3.0",
   "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.6.0",
+  "engines": {
+    "node": ">=22.23.4 <23"
+  },
   "scripts": {
-    "package": "python3 tools/package.py",
-    "test": "playwright test",
-    "test:unit": "node --expose-gc --test tests/engine.test.cjs tests/popup.test.cjs",
-    "check": "python3 tools/test.py --browser /opt/zen/zen",
-    "check:perf": "python3 tools/performance.py --browser /opt/zen/zen"
+    "prepare": "node --import tsx tools/prepare-hooks.ts",
+    "check:commit": "node --import tsx tools/check-commit.ts && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
+    "check:push": "node --import tsx tools/check-push.ts",
+    "check:commits": "node --import tsx tools/commits.ts",
+    "lint:commit": "commitlint",
+    "lint": "oxlint --type-aware --deny-warnings",
+    "typecheck": "tsc -p src/tsconfig.json && tsc -p tsconfig.json",
+    "build": "node --import tsx tools/build.ts",
+    "package": "node --import tsx tools/package.ts",
+    "test": "node --import tsx tools/test.ts native",
+    "test:unit": "node --import tsx tools/test.ts unit",
+    "check": "node --import tsx tools/test.ts check",
+    "check:perf": "node --import tsx tools/performance.ts",
+    "live:probe": "node --import tsx tools/live-probe.ts",
+    "live:control": "node --import tsx tools/live-control.ts",
+    "live:perf": "node --import tsx tools/live-performance.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.1"
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
+    "@types/firefox-webext-browser": "143.0.1",
+    "@types/node": "^22.20.5",
+    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
+    "husky": "^9.1.7",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "webdriverio": "10.2.0"
   }
 }

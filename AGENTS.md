@@ -1,86 +1,85 @@
-# Lazy Reverb: инструкции для агента
+# Lazy Reverb agent instructions
 
-## Назначение и границы
+## Purpose and scope
 
-Небольшое WebExtension для **Zen Browser**, совместимое с Firefox 128+: скорость 0,5–2× с изменением тона, реверберация 0–100 % и бас-буст 0–12 дБ для YouTube, YouTube Music и SoundCloud. Приоритеты проекта — минимальная нагрузка и простое управление.
+Lazy Reverb is a small WebExtension for **Zen Browser** and Firefox 128+. It offers 0.5–2× playback with pitch following speed, 0–100% reverb, and 0–12 dB bass boost on YouTube, YouTube Music, and SoundCloud. Keep overhead low and the controls simple.
 
-Следуйте инструкциям среды и родительскому `AGENTS.md`, если он есть. В среде с обязательным RTK запускайте shell-команды через него; сам проект не требует RTK. Для знакомства достаточно этого файла, `README.md`, `ARCHITECTURE.md` и файлов слоя, который меняет задача. Не сканируйте домашнюю папку и пользовательские профили браузеров.
+Follow the environment instructions and any parent AGENTS.md. Use RTK for shell commands where the environment requires it. The project itself does not require RTK. Start with this file, README.md, ARCHITECTURE.md, and the files relevant to the task. Do not scan the home directory or user browser profiles.
 
-## Карта проекта
+## Project map
 
-| Файл | Ответственность |
+| File | Responsibility |
 | --- | --- |
-| `manifest.json` | Разрешения, поддерживаемые адреса, ранняя загрузка движка в MAIN, сочетание `_execute_action` |
-| `engine.js` | Аудиограф, обнаружение плееров, скорость, состояние эффекта; `window.__lazyReverb.get()/set()` |
-| `popup.html`, `popup.css`, `popup.js` | Панель на русском языке, управление текущей вкладкой, локальные настройки и очередь изменений |
-| `tests/engine.test.cjs`, `tests/popup.test.cjs` | Модульные тесты поведения и детерминированных ограничений производительности |
-| `tests/player.spec.cjs`, `tests/browser-fixture.cjs` | Playwright-сценарии интерфейса и движка в тестовом Firefox |
-| `tools/firefox-smoke.py`, `tools/browser_session.py` | Установка настоящего дополнения и проверка аудио в отдельном профиле Zen/Firefox через Marionette |
-| `tools/performance.py`, `tools/performance_gate.py`, `performance-budget.json` | Сравнительный замер CPU/PSS, оценка бюджета и контроль шума |
-| `tests/test_performance_gate.py`, `tools/test.py` | Проверки вердиктов performance-гейта и общий функциональный гейт |
-| `tools/package.py` | ZIP только с шестью файлами расширения; без тестов, зависимостей и отчётов |
-| `ARCHITECTURE.md`, `.github/workflows/check.yml` | Поток управления, владение ресурсами и проверки GitHub Actions |
+| `manifest.json` | Permissions, supported URLs, early engine loading in MAIN, and the `_execute_action` shortcut |
+| `src/engine.ts` | Audio graph, player discovery, playback rate, effect state, and `window.__lazyReverb.get()/set()` |
+| `popup.html`, `popup.css`, `src/popup.ts` | Popup, current-tab controls, local preferences, and the update queue |
+| `tests/engine.test.ts`, `tests/popup.test.ts` | Behavior of the bundled engine and popup |
+| `tests/native/`, `tools/browser-session.ts` | Native tests of the real ZIP in temporary Firefox or Zen profiles, using local fixtures and audio measurements |
+| `tools/performance.ts`, `tools/process-sampler.ts`, `tools/performance-gate.ts`, `performance-budget.json` | Comparative CPU/PSS sampling, validation, budget checks, and noise detection |
+| `tests/performance-gate.test.ts`, `tests/process-sampler.test.ts`, `tools/test.ts` | CPU/PSS fixtures and the combined functional check, which builds once |
+| `tools/build.ts`, `tools/package.ts` | Firefox 128 build and ZIP containing the same six extension files |
+| `ARCHITECTURE.md`, `.github/workflows/check.yml` | Control flow, resource ownership, and GitHub Actions checks |
 
-## Важные инварианты
+## Invariants
 
-1. Обработка по умолчанию выключена в каждой новой или обновлённой вкладке. Настройки скорости, реверберации и баса сохраняются; состояние включения между вкладками не переносится.
-2. Выключение восстанавливает исходные `playbackRate` и `preservesPitch`, отсоединяет ветки баса и реверберации и освобождает `ConvolverNode.buffer`. Путь исходного звука остаётся подключённым.
-3. `MediaElementAudioSourceNode` создаётся для элемента один раз. Не закрывайте и не приостанавливайте его контекст при выключении эффекта: это заглушит плеер. Контекст и соединения, принадлежащие сайту, нельзя разрушать.
-4. SoundCloud может использовать скрытый `new Audio()` и собственный Web Audio-граф. Сохраняйте обнаружение через `play()` и фабрику источника; `connect(destination)` и `disconnect(destination)` должны перенаправляться согласованно. OfflineAudioContext не перехватывается.
-5. Не перенаправляйте защищённые или внешние потоки без CORS в Web Audio. Безопасный вариант — сохранить воспроизведение и предложить одно замедление.
-6. Нет фонового процесса, сетевых запросов, аналитики, polling или MutationObserver на всю страницу. Поиск существующих плееров выполняется при включении; изменения ползунков не должны повторять поиск или пересоздавать граф.
-7. При реверберации 0 % свёртка отключена, при басе 0 дБ фильтр отключён. Для одного замедления обычного элемента AudioContext не нужен. Повторные переключения не накапливают источники и узлы.
-8. Бас — нативный полочный фильтр на 200 Гц без компенсации громкости: перегруз исходного сигнала допустим. Не возвращайте автоматическое ослабление без изменения требований. Движок проверяет типы и диапазоны входных значений независимо от ползунков панели.
-9. Содержимое страницы не получает доступ к API расширений или секретам. Разрешения ограничены целевыми сайтами. В runtime нет npm/Python-зависимостей и удалённого кода.
-10. Реестры плееров и контекстов не должны удерживать удалённые объекты от сборки мусора. Очищайте только остановленные отсоединённые плееры; играющий скрытый `new Audio()` сохраняется. При повторном `play()` восстанавливайте собственный источник даже с выключенными эффектами. Источники и контексты сайта не отсоединяйте и не закрывайте.
+1. Effects start off in every new or reloaded tab. The rate, reverb, and bass preferences persist. The enabled flag belongs to the current document.
+2. Turning effects off restores the original `playbackRate` and `preservesPitch`, disconnects the bass and reverb branches, and clears `ConvolverNode.buffer`. The dry path stays connected.
+3. Each element gets one `MediaElementAudioSourceNode`. Closing or suspending its context when effects turn off would mute the player. Preserve site-owned contexts and connections.
+4. SoundCloud may use detached `new Audio()` players and a site-owned Web Audio graph. Keep discovery through `play()` and the source factory. Redirect `connect(destination)` and `disconnect(destination)` consistently. Leave `OfflineAudioContext` alone.
+5. Keep DRM-protected streams and cross-origin streams without CORS out of Web Audio. Preserve playback and offer rate control.
+6. The extension has no background process, network requests, analytics, polling, or document-wide `MutationObserver`. Scan for existing players on enable. Slider edits should reuse that result and the graph.
+7. At 0% reverb, disconnect convolution. At 0 dB bass, disconnect the filter. A normal media element needs no `AudioContext` for rate control alone. Repeated toggles should reuse nodes and sources.
+8. Bass uses a native 200 Hz low-shelf filter with no gain compensation. A loud source may clip. Automatic attenuation would change the product requirements. The engine validates input types and ranges independently of the popup.
+9. Page code has no access to extension APIs or secrets. Scope permissions to the supported sites. The runtime has no npm or Python dependencies and loads no remote code.
+10. Player and context registries must allow garbage collection. Retire paused, detached players and retain detached players that are still playing. Reconnect a previously created extension source on the next `play()` even with effects off. Preserve site-owned sources and contexts.
 
-## Проверки и гейты
+## Checks and gates
 
-Первичная подготовка: `rtk run npm ci`, затем `rtk run node node_modules/playwright/cli.js install firefox`.
+Run `nvm install`, `nvm use`, and `rtk run pnpm install --frozen-lockfile`. Node and pnpm are pinned in `.nvmrc` and `packageManager`. Native tests require GeckoDriver 0.37.1. Pass `--driver`, put it on `PATH`, or use `dist/drivers/geckodriver`. CI uses the same Node and pnpm versions and Firefox 159.0.
 
-Функциональный гейт:
-
-```sh
-rtk run python3 tools/test.py --browser /opt/zen/zen
-```
-
-Он проверяет движок, панель, performance-гейт, настоящее аудио Zen и сценарии Playwright. Набор содержит 33 модульных теста, 15 браузерных сценариев и аудиотест Zen. Тесты движка запускайте с `node --expose-gc`, чтобы проверка сборки мусора не пропускалась. Для узкой правки сначала запускайте соответствующий тест; повторять весь набор после правки только документации не нужно.
-
-После изменения графа, lifecycle, обнаружения плееров или нагрузки дополнительно обязателен сравнительный гейт:
+Run the functional gate with Zen:
 
 ```sh
-rtk run python3 tools/performance.py --browser /opt/zen/zen
+rtk run pnpm run check --browser /opt/zen/zen
 ```
 
-Отчёт: `dist/performance-zen.json`. Коды выхода: `0` — бюджет соблюдён; `1` — регрессия; `2` — недостаточные или шумные данные. `inconclusive` не считается прохождением. Не повышайте бюджет, чтобы скрыть провал. CPU указан в процентах одного ядра; память — PSS всей группы процессов тестового браузера. Синтетический замер не равен нагрузке всей страницы YouTube или SoundCloud.
+The gate runs `pnpm run lint` and `pnpm run typecheck` before building, then runs the unit and native tests against a fresh ZIP. Oxlint checks authored source, configuration, tools, and tests with type information. Warnings and backend failures fail the gate. TypeScript checks the browser and Node projects separately. Preserve nonzero exit codes and run automatic fixes separately. Engine tests require `node --expose-gc`. For a narrow change, start with the relevant check.
 
-Текущий performance-стенд измеряет только DSP: один AudioBufferSource и один AudioContext, созданный настоящим пользовательским кликом. Контекст не пересоздаётся между режимами; исходный маршрут сравнивается с маршрутом через движок и с прямым маршрутом в конце. Это проверка стоимости баса и свёртки, а не декодирования HTML-медиа, замедления или полной страницы сервиса. Дополнительный режим `paused` отсоединяет источник, не вызывает HTMLMediaElement.pause(). Предыдущий стенд с пересозданием медиаплеера ловил autoplay-блокировку; не возвращайтесь к нему без отдельного решения активации. При внедрении кода стенда используйте `inject_page_script()`: обычный `execute()` работает в песочнице Marionette, а движок должен исполняться в контексте страницы.
+Changes to the audio graph, lifecycle, player discovery, or resource use also require the comparative gate:
 
-Результат замера и его ограничения указывайте в отчёте о работе. Локальные JSON-отчёты в `dist/` исключены из Git; не публикуйте их автоматически, особенно результаты диагностики живых страниц.
+```sh
+rtk run pnpm run check:perf --browser /opt/zen/zen
+```
 
-Playwright официально не поддерживает расширения Firefox. В его сценариях исходники панели и движка исполняются без изменений, а API `browser.*` заменяет тестовый мост. Нативная установка и DSP проверяются отдельно в Zen. Не называйте это автоматизацией настоящей панели инструментов Zen. Не возвращайтесь к серии экспериментов с её внутренними DOM и модулями: открытие по значку и горячая клавиша проверяются вручную.
+The report is `dist/performance-zen.json`. Exit codes are `0` for pass, `1` for regression, and `2` for missing or noisy data. An inconclusive run does not pass. Keep the budgets fixed when diagnosing a failure. CPU is percent of one core. Memory is PSS for the entire test browser process group. The synthetic benchmark measures a narrower workload than a full YouTube or SoundCloud page.
 
-При сбоях Playwright сохраняет трассу, снимки экрана и HTML-отчёт. Не запускайте рабочий профиль пользователя и не меняйте его настройки безопасности ради тестов.
+Method 2 measures DSP using Linux `/proc`. One AudioBufferSource and one AudioContext start on a real click. GeckoDriver injects the built engine into the controlled content page between `native_before` and `native_after`. The `paused` phase disconnects the source. Each phase keeps four raw CPU/PSS samples and their intervals, with the median as both summaries. Audio-clock and signal checks run outside sampling windows. Missing samples, process churn, inactive DSP, and noise prevent a pass. CI tests the sampler and verdict against fixtures. A native result of `fail` or `inconclusive` blocks the push.
 
-Все E2E используют локальный HTML и сгенерированный WAV. Домены сервисов нужны только как origin для проверки разрешений: `context.route('**/*')` возвращает локальный ответ или прерывает запрос; `continue()` и `fetch()` недопустимы. Service worker отключены. Firefox offline-режим блокирует даже перехваченные ответы, поэтому не используйте его для этого стенда. Не добавляйте ссылки на настоящие видео и треки в фикстуры или CI. Ручные `tools/live_*.py` требуют явного URL и не входят в обязательный гейт.
+Report benchmark results and measurement limits. Keep local JSON reports in ignored `dist/`, especially reports from live-page diagnostics.
 
-CI запускает модульные тесты, Playwright и упаковку. Нативный Zen и аппаратно-зависимый performance-гейт остаются локальными проверками. Не выдавайте зелёный CI за проверку нагрузки целых страниц сервисов.
+WebdriverIO installs the fresh ZIP through GeckoDriver. A normal music tab is active when the real popup document initializes in the background. Opening the popup from the toolbar and pressing the physical shortcut are manual checks. On failure, save any available screenshot, HTML, console output, driver log, and scenario step. Use temporary profiles. See [architecture](ARCHITECTURE.md).
 
-## Упаковка и проверка пользователем
+All end-to-end tests use local HTML and WAV data. Before navigation, BiDi serves approved fixtures and aborts all other HTTP(S) requests. Service workers are disabled. Live diagnostics are separate commands, `live:probe`, `live:control`, and `live:perf`, which require an explicit URL.
 
-`npm run package` создаёт `dist/lazy-reverb-<version>.zip`; установка npm-зависимостей для упаковки не нужна. Без npm используйте `python3 tools/package.py`. В среде с обязательным RTK запускайте эти команды через `rtk run`. Сверяйте версию с `manifest.json` и `package.json`; lock-файл меняется при изменении npm-зависимостей или метаданных пакета.
+CI checks lint, types, the commit range, unit fixtures, native Firefox, and the ZIP. Zen and the hardware-dependent DSP benchmark run locally.
 
-Дополнение пока не подписано: загрузка через `about:debugging` временная и исчезает при перезапуске. После перезагрузки дополнения нужно обновить музыкальную вкладку, иначе там остаётся старый движок. Для постоянной установки используйте подпись Mozilla, не отключение проверки подписей.
+## Packaging and manual verification
 
-Быстрый доступ по умолчанию: **Ctrl+Shift+F8**. Панель показывает фактическое сочетание и позволяет назначить новое через `browser.commands.update`. Старое назначение может сохраниться после обновления. Значок можно закрепить через меню расширений Zen. Пресет **«Лениво»** включает обработку; **«Быстрее»** задаёт 1,25× без реверберации. Для одного бас-буста: скорость **1,00×**, реверберация **0 %**.
+`pnpm run build` creates `dist/firefox/`. To load the directory as a temporary extension, select `dist/firefox/manifest.json`. `pnpm run package` builds the same files and writes `dist/lazy-reverb-<version>.zip`.
 
-В отчёте о работе указывайте конкретные изменения, выполненные проверки и ограничения измерений. Если performance-гейт не прошёл, сообщайте это явно.
+Loading the unsigned extension through `about:debugging` is temporary and ends on browser restart. Refresh music tabs after reloading the extension to load the new engine. Permanent installations require Mozilla signing.
 
-## Коммиты и документация
+The default shortcut is **Ctrl+Shift+F8**. The popup shows the registered shortcut and can assign it through `browser.commands.update`. An older assignment may persist through an update. The Zen extensions menu can pin the icon. The **Lazy** preset enables processing. **Faster** selects 1.25× with 0% reverb. For bass alone, set speed to **1.00×** and reverb to **0%**.
 
-Делайте отдельные логические коммиты в формате Conventional Commits: `feat:`, `fix:`, `test:`, `docs:`, `chore:`. Описание должно называть изменение поведения. Не включайте зависимости, сборки и локальные отчёты. Версии `manifest.json`, `package.json` и корневых метаданных `package-lock.json` должны совпадать в готовой сборке.
+Report concrete changes, checks run, and measurement limits. State whether the performance gate passed.
 
-Пишите документацию на русском языке, с точными названиями API и ограничениями проверок. Изменение поведения сопровождайте обновлением соответствующего раздела README и архитектурных инвариантов. Лицензию и публикацию подписанного дополнения согласовывайте отдельно от публикации исходников.
+## Commits and documentation
+
+Use separate logical commits with Conventional Commit prefixes such as `feat:`, `fix:`, `test:`, `docs:`, or `chore:`. Describe the behavior change. Keep installed dependencies, build output, and local reports out of Git. Keep the versions in `manifest.json` and `package.json` in sync. Use `pnpm install --frozen-lockfile` to verify dependencies.
+
+The `prepare` script enables Husky. Pre-commit checks the staged OpenSpec boundary, source/index parity, lint, types, and unit tests. Commit-msg runs local commitlint. Pre-push checks that the tree being pushed matches HEAD and runs the native functional and local DSP gates on one package. GUI Git clients need the same Node and pnpm versions as the shell after `nvm use`.
+
+Write repository documentation, comments, and visible text in English. Use exact API names and describe what the checks cover. Update the relevant README section and architecture invariants when behavior changes. Agree on licensing and signed-extension publication separately from source publication.
 
 ## Code Review Rules
 
