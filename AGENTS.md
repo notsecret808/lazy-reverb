@@ -80,3 +80,10 @@ Use separate logical commits with Conventional Commit prefixes such as `feat:`, 
 The `prepare` script enables Husky. Pre-commit checks the staged OpenSpec boundary, source/index parity, lint, types, and unit tests. Commit-msg runs local commitlint. Pre-push checks that the tree being pushed matches HEAD and runs the native functional and local DSP gates on one package. GUI Git clients need the same Node and pnpm versions as the shell after `nvm use`.
 
 Write repository documentation, comments, and visible text in English. Use exact API names and describe what the checks cover. Update the relevant README section and architecture invariants when behavior changes. Agree on licensing and signed-extension publication separately from source publication.
+
+## Code Review Rules
+
+- Put the overall assessment, checks run, and remaining work in the review summary or a general PR comment.
+- Put actionable findings on the relevant lines in the diff. Explain what can go wrong, when it happens, and how to fix it.
+- Answer existing feedback in its review thread. Link to the commit that addresses it when available.
+- When asked to publish through the GitHub App, follow the [review bot guide](.github/REVIEW_BOT.md).

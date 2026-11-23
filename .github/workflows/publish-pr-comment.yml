@@ -1,0 +1,407 @@
+# See .github/REVIEW_BOT.md for usage.
+name: Publish PR comment as GitHub App
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: string
+      body:
+        description: Comment text or review summary (required for publishing and edits)
+        required: false
+        type: string
+      review_comment_id:
+        description: Review thread's first comment ID (thread reply)
+        required: false
+        type: string
+      review:
+        description: Review JSON with commit_id and inline comments
+        required: false
+        type: string
+      operation:
+        description: Action to take
+        default: publish
+        type: choice
+        options:
+          - publish
+          - reply_to_threads
+          - edit_summary_comment
+          - edit_review_summary
+          - resolve_thread
+          - react_to_pr
+          - react_to_comment
+          - react_to_review_comment
+      replies:
+        description: JSON array of review_comment_id and body pairs for a batch
+        type: string
+      target_id:
+        description: Comment, review, or review thread ID for the selected action
+        type: string
+      reaction:
+        description: GitHub reaction code (+1, -1, laugh, confused, heart, hooray, rocket, eyes)
+        type: string
+      dry_run:
+        description: Verify the target without changing anything on GitHub
+        default: false
+        type: boolean
+
+permissions: {}
+
+jobs:
+  publish:
+    if: >-
+      github.ref == 'refs/heads/main'
+      && github.run_attempt == '1'
+      && github.actor_id != ''
+      && github.actor_id == github.repository_owner_id
+    runs-on: ubuntu-latest
+    environment: pr-comment-bot
+    concurrency:
+      group: ${{ inputs.operation == 'reply_to_threads' && format('review-bot-replies-{0}', inputs.pr) || format('review-bot-run-{0}', github.run_id) }}
+      queue: max
+    steps:
+      - name: Validate inputs
+        env:
+          PR_NUMBER: ${{ inputs.pr }}
+          OPERATION: ${{ inputs.operation }}
+          TARGET_ID: ${{ inputs.target_id }}
+          REACTION: ${{ inputs.reaction }}
+          REPLIES: ${{ inputs.replies }}
+          COMMENT_BODY: ${{ inputs.body }}
+          REVIEW: ${{ inputs.review }}
+          REVIEW_COMMENT_ID: ${{ inputs.review_comment_id }}
+        shell: bash
+        run: |
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            printf '%s\n' 'Expected a positive pull request number.' >&2
+            exit 1
+          fi
+
+          if [[ "$OPERATION" == 'publish' ]]; then
+            if [[ -n "$TARGET_ID" || -n "$REACTION" ]]; then
+              printf '%s\n' 'Select an edit, resolve, or reaction action to use target_id or reaction.' >&2
+              exit 1
+            fi
+          elif [[ -n "$REVIEW" || -n "$REVIEW_COMMENT_ID" ]]; then
+            printf '%s\n' 'Review JSON and review_comment_id are inputs for the publish action.' >&2
+            exit 1
+          fi
+
+          if [[ "$OPERATION" == 'reply_to_threads' ]]; then
+            if [[ -n "$TARGET_ID" || -n "$REACTION" || -n "$COMMENT_BODY" ]]; then
+              printf '%s\n' 'Pass batch messages in replies without body, target_id, or reaction.' >&2
+              exit 1
+            fi
+          elif [[ -n "$REPLIES" ]]; then
+            printf '%s\n' 'Select reply_to_threads to use replies.' >&2
+            exit 1
+          fi
+
+      - name: Create GitHub App token
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+          permission-issues: ${{ (inputs.operation == 'react_to_pr' || inputs.operation == 'react_to_comment') && 'write' || '' }}
+
+      - name: Verify target and publish
+        if: inputs.operation == 'publish'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+          COMMENT_BODY: ${{ inputs.body }}
+          REVIEW_COMMENT_ID: ${{ inputs.review_comment_id }}
+          REVIEW: ${{ inputs.review }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          if [[ -n "$REVIEW" && -n "$REVIEW_COMMENT_ID" ]]; then
+            printf '%s\n' 'Supply either a review or a review thread ID.' >&2
+            exit 1
+          fi
+
+          pr_endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"
+          head_sha=$(gh api "$pr_endpoint" --jq '.head.sha')
+          endpoint="repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"
+          target="PR #$PR_NUMBER"
+          payload=$(jq -cn --arg body "$COMMENT_BODY" '{body: $body}')
+          if [[ -n "$REVIEW" ]]; then
+            if ! payload=$(jq -cse --arg body "$COMMENT_BODY" '
+              def line_number: type == "number" and . > 0 and floor == .;
+              def diff_side: . == "LEFT" or . == "RIGHT";
+              def inline_comment:
+                type == "object"
+                and all((.path, .body); type == "string" and test("\\S"))
+                and (.line | line_number)
+                and (.side | diff_side)
+                and (if has("start_line") or has("start_side") then
+                  (.start_line | line_number) and (.start_side | diff_side)
+                else true end);
+              select(length == 1) | .[0]
+              | select(type == "object" and (.commit_id | type == "string" and test("^[0-9a-f]{40}$")))
+              | select(.comments | type == "array" and all(.[]; inline_comment))
+              | {commit_id, body: $body, event: "COMMENT", comments: [
+                  .comments[] | {path, body, line, side}
+                    + (if has("start_line") then {start_line, start_side} else {} end)
+                ]}
+            ' <<< "$REVIEW"); then
+              printf '%s\n' 'Review must contain a full commit_id and a valid array of inline comments.' >&2
+              exit 1
+            fi
+
+            if [[ $(jq -r '.commit_id' <<< "$payload") != "$head_sha" ]]; then
+              printf '%s\n' 'The pull request head changed. Review its current commit before publishing.' >&2
+              exit 1
+            fi
+
+            endpoint="$pr_endpoint/reviews"
+            target="review on $target at $head_sha"
+          elif [[ -n "$REVIEW_COMMENT_ID" ]]; then
+            if [[ ! "$REVIEW_COMMENT_ID" =~ ^[1-9][0-9]*$ ]]; then
+              printf '%s\n' 'Expected a positive review comment ID.' >&2
+              exit 1
+            fi
+
+            review_comment=$(gh api "repos/$GITHUB_REPOSITORY/pulls/comments/$REVIEW_COMMENT_ID")
+            if ! jq -e --arg pr_url "$GITHUB_API_URL/$pr_endpoint" \
+              '.pull_request_url == $pr_url and .in_reply_to_id == null' >/dev/null <<< "$review_comment"; then
+              printf '%s\n' 'The review comment must be the first comment of a thread on the selected PR.' >&2
+              exit 1
+            fi
+
+            endpoint="$pr_endpoint/comments/$REVIEW_COMMENT_ID/replies"
+            target="review thread #$REVIEW_COMMENT_ID on $target"
+          fi
+
+          if [[ "$DRY_RUN" == 'true' ]]; then
+            printf 'GitHub App access verified for %s.\n' "$target"
+            exit 0
+          fi
+
+          if [[ -z "$COMMENT_BODY" ]]; then
+            printf '%s\n' 'Comment text or a review summary is required when publishing.' >&2
+            exit 1
+          fi
+
+          gh api --method POST "$endpoint" --input - --jq '.html_url' <<< "$payload"
+
+      - name: Reply to review threads in a batch
+        if: inputs.operation == 'reply_to_threads'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PR_NUMBER: ${{ inputs.pr }}
+          REPLIES: ${{ inputs.replies }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          if ! replies=$(jq -cse '
+            def reply:
+              type == "object"
+              and (.review_comment_id | type == "string" and test("^[1-9][0-9]*$"))
+              and (.body | type == "string" and test("\\S"));
+            select(length == 1) | .[0]
+            | select(type == "array" and length > 0 and all(.[]; reply))
+            | select(map(.review_comment_id) | length == (unique | length))
+            | map({review_comment_id, body})
+          ' <<< "$REPLIES"); then
+            printf '%s\n' 'Pass a nonempty array of replies with unique string review_comment_id values and nonempty body text.' >&2
+            exit 1
+          fi
+
+          pr_endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"
+          comments=$(gh api "$pr_endpoint/comments?per_page=100" --paginate | jq -cs 'add // []')
+          plan=$(printf '%s\n' "$replies" "$comments" | jq -cs --arg bot "$APP_SLUG[bot]" '
+            def message: gsub("\r\n"; "\n") | sub("\n+$"; "");
+            . as [$replies, $comments]
+            | ($comments | map(select(.in_reply_to_id == null) | .id | tostring)) as $thread_ids
+            | ($comments | map(select(.user.login == $bot and .in_reply_to_id != null))) as $posted
+            | $replies | map(
+                . as $reply
+                | ($reply.body | message) as $body
+                | . + {
+                    valid: ($thread_ids | index($reply.review_comment_id) != null),
+                    existing_url: (first($posted[] | select(
+                      (.in_reply_to_id | tostring) == $reply.review_comment_id
+                      and (.body | message) == $body
+                    ) | .html_url) // "")
+                  }
+              )
+          ')
+
+          invalid_ids=$(jq -r 'map(select(.valid | not) | .review_comment_id) | join(", ")' <<< "$plan")
+          if [[ -n "$invalid_ids" ]]; then
+            printf 'Expected first comments of review threads on PR #%s. Invalid IDs: %s\n' \
+              "$PR_NUMBER" "$invalid_ids" >&2
+            exit 1
+          fi
+
+          printf '### Thread replies for PR #%s\n\n| Thread comment ID | Status | Link |\n| --- | --- | --- |\n' \
+            "$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+          failed=false
+          while IFS= read -r reply; do
+            id=$(jq -r '.review_comment_id' <<< "$reply")
+            url=$(jq -r '.existing_url' <<< "$reply")
+            if [[ -n "$url" ]]; then
+              status='Already posted'
+            elif [[ "$DRY_RUN" == 'true' ]]; then
+              status='Would post'
+            elif [[ "$failed" == 'true' ]]; then
+              status='Pending'
+            else
+              payload=$(jq -c '{body}' <<< "$reply")
+              if url=$(gh api --method POST "$pr_endpoint/comments/$id/replies" \
+                --input - --jq '.html_url // empty' <<< "$payload") && [[ -n "$url" ]]; then
+                status='Posted'
+                sleep 1
+              else
+                failed=true
+                status='Failed'
+              fi
+            fi
+
+            link='—'
+            if [[ -n "$url" ]]; then
+              link="[Reply]($url)"
+            fi
+            printf '| %s | %s | %s |\n' "$id" "$status" "$link" >> "$GITHUB_STEP_SUMMARY"
+            printf 'Thread %s %s %s\n' "$id" "$status" "$url"
+          done < <(jq -c '.[]' <<< "$plan")
+
+          if [[ "$failed" == 'true' ]]; then
+            printf '%s\n' 'Dispatch the same batch again to retry pending replies.' >&2
+            exit 1
+          fi
+
+      - name: Edit a summary, resolve a thread, or react
+        if: inputs.operation != 'publish' && inputs.operation != 'reply_to_threads'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PR_NUMBER: ${{ inputs.pr }}
+          OPERATION: ${{ inputs.operation }}
+          TARGET_ID: ${{ inputs.target_id }}
+          COMMENT_BODY: ${{ inputs.body }}
+          REACTION: ${{ inputs.reaction }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          if [[ "$OPERATION" != 'resolve_thread' && "$OPERATION" != 'react_to_pr' &&
+            ! "$TARGET_ID" =~ ^[1-9][0-9]*$ ]]; then
+            printf '%s\n' 'Expected a positive comment or review ID in target_id.' >&2
+            exit 1
+          fi
+
+          pr_endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"
+          issue_endpoint="repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER"
+          gh api "$pr_endpoint" --silent
+
+          method=POST
+          response_filter='.html_url'
+          target="PR #$PR_NUMBER"
+          case "$OPERATION" in
+            edit_summary_comment|react_to_comment)
+              endpoint="repos/$GITHUB_REPOSITORY/issues/comments/$TARGET_ID"
+              resource=$(gh api "$endpoint")
+              if ! jq -e --arg parent "$GITHUB_API_URL/$issue_endpoint" \
+                '.issue_url == $parent' >/dev/null <<< "$resource"; then
+                printf '%s\n' 'The comment must belong to the selected pull request.' >&2
+                exit 1
+              fi
+              target="comment #$TARGET_ID on $target"
+              ;;
+            edit_review_summary)
+              endpoint="$pr_endpoint/reviews/$TARGET_ID"
+              resource=$(gh api "$endpoint")
+              target="review #$TARGET_ID on $target"
+              ;;
+            react_to_review_comment)
+              endpoint="repos/$GITHUB_REPOSITORY/pulls/comments/$TARGET_ID"
+              if ! gh api "$endpoint" | jq -e --arg parent "$GITHUB_API_URL/$pr_endpoint" \
+                '.pull_request_url == $parent' >/dev/null; then
+                printf '%s\n' 'The review comment must belong to the selected pull request.' >&2
+                exit 1
+              fi
+              target="review comment #$TARGET_ID on $target"
+              ;;
+            react_to_pr)
+              endpoint="$issue_endpoint"
+              ;;
+            resolve_thread)
+              thread=$(gh api graphql -f id="$TARGET_ID" -f query='
+                query($id: ID!) {
+                  node(id: $id) {
+                    ... on PullRequestReviewThread {
+                      isResolved
+                      viewerCanResolve
+                      pullRequest { number repository { nameWithOwner } }
+                    }
+                  }
+                }' --jq '.data.node')
+              if ! jq -e --arg repo "$GITHUB_REPOSITORY" --arg number "$PR_NUMBER" '
+                .pullRequest.repository.nameWithOwner == $repo
+                and (.pullRequest.number | tostring) == $number
+                and (.isResolved or .viewerCanResolve)
+              ' >/dev/null <<< "$thread"; then
+                printf '%s\n' 'Expected a review thread on the selected PR that the app can resolve.' >&2
+                exit 1
+              fi
+              if jq -e '.isResolved' >/dev/null <<< "$thread"; then
+                printf '%s\n' 'The review thread is already resolved.'
+                exit 0
+              fi
+              endpoint=graphql
+              target="review thread $TARGET_ID on $target"
+              ;;
+            *)
+              printf '%s\n' 'Unexpected workflow action.' >&2
+              exit 1
+              ;;
+          esac
+
+          case "$OPERATION" in
+            edit_summary_comment|edit_review_summary)
+              if ! jq -e --arg author "$APP_SLUG[bot]" \
+                '.user.login == $author' >/dev/null <<< "$resource"; then
+                printf '%s\n' 'The GitHub App can edit only its own summaries.' >&2
+                exit 1
+              fi
+              if [[ "$DRY_RUN" != 'true' && -z "$COMMENT_BODY" ]]; then
+                printf '%s\n' 'The new summary is required in body.' >&2
+                exit 1
+              fi
+              if [[ "$OPERATION" == 'edit_review_summary' ]]; then
+                method=PUT
+              else
+                method=PATCH
+              fi
+              payload=$(jq -cn --arg body "$COMMENT_BODY" '{body: $body}')
+              ;;
+            react_to_pr|react_to_comment|react_to_review_comment)
+              case "$REACTION" in
+                +1|-1|laugh|confused|heart|hooray|rocket|eyes) ;;
+                *) printf '%s\n' 'Expected a supported GitHub reaction code.' >&2; exit 1 ;;
+              esac
+              endpoint="$endpoint/reactions"
+              payload=$(jq -cn --arg content "$REACTION" '{content: $content}')
+              response_filter='"Reaction \(.content) recorded."'
+              ;;
+            resolve_thread)
+              payload=$(jq -cn --arg id "$TARGET_ID" --arg query '
+                mutation($id: ID!) {
+                  resolveReviewThread(input: {threadId: $id}) { thread { id isResolved } }
+                }' '{query: $query, variables: {id: $id}}')
+              response_filter='.data.resolveReviewThread.thread | "Review thread \(.id) resolved."'
+              ;;
+          esac
+
+          if [[ "$DRY_RUN" == 'true' ]]; then
+            printf 'Verified %s for %s.\n' "$OPERATION" "$target"
+            exit 0
+          fi
+
+          gh api --method "$method" "$endpoint" --input - --jq "$response_filter" <<< "$payload"
