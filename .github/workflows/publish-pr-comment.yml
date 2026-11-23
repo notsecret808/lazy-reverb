@@ -8,11 +8,15 @@ on:
         required: true
         type: string
       body:
-        description: Comment text (required when publishing)
+        description: Comment text or review summary (required when publishing)
         required: false
         type: string
       review_comment_id:
-        description: Review thread's first comment ID (omit for a general PR comment)
+        description: Review thread's first comment ID (thread reply)
+        required: false
+        type: string
+      review:
+        description: Review JSON with commit_id and inline comments
         required: false
         type: string
       dry_run:
@@ -36,12 +40,13 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-pull-requests: write
 
-      - name: Verify access and publish comment
+      - name: Verify target and publish
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_NUMBER: ${{ inputs.pr }}
           COMMENT_BODY: ${{ inputs.body }}
           REVIEW_COMMENT_ID: ${{ inputs.review_comment_id }}
+          REVIEW: ${{ inputs.review }}
           DRY_RUN: ${{ inputs.dry_run }}
         shell: bash
         run: |
@@ -50,23 +55,61 @@ jobs:
             exit 1
           fi
 
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --silent
+          if [[ -n "$REVIEW" && -n "$REVIEW_COMMENT_ID" ]]; then
+            printf '%s\n' 'Supply either a review or a review thread ID.' >&2
+            exit 1
+          fi
+
+          pr_endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"
+          head_sha=$(gh api "$pr_endpoint" --jq '.head.sha')
           endpoint="repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"
           target="PR #$PR_NUMBER"
-          if [[ -n "$REVIEW_COMMENT_ID" ]]; then
+          payload=$(jq -cn --arg body "$COMMENT_BODY" '{body: $body}')
+          if [[ -n "$REVIEW" ]]; then
+            if ! payload=$(jq -cse --arg body "$COMMENT_BODY" '
+              def line_number: type == "number" and . > 0 and floor == .;
+              def diff_side: . == "LEFT" or . == "RIGHT";
+              def inline_comment:
+                type == "object"
+                and all((.path, .body); type == "string" and test("\\S"))
+                and (.line | line_number)
+                and (.side | diff_side)
+                and (if has("start_line") or has("start_side") then
+                  (.start_line | line_number) and (.start_side | diff_side)
+                else true end);
+              select(length == 1) | .[0]
+              | select(type == "object" and (.commit_id | type == "string" and test("^[0-9a-f]{40}$")))
+              | select(.comments | type == "array" and all(.[]; inline_comment))
+              | {commit_id, body: $body, event: "COMMENT", comments: [
+                  .comments[] | {path, body, line, side}
+                    + (if has("start_line") then {start_line, start_side} else {} end)
+                ]}
+            ' <<< "$REVIEW"); then
+              printf '%s\n' 'Review must contain a full commit_id and a valid array of inline comments.' >&2
+              exit 1
+            fi
+
+            if [[ $(jq -r '.commit_id' <<< "$payload") != "$head_sha" ]]; then
+              printf '%s\n' 'The pull request head changed. Review its current commit before publishing.' >&2
+              exit 1
+            fi
+
+            endpoint="$pr_endpoint/reviews"
+            target="review on $target at $head_sha"
+          elif [[ -n "$REVIEW_COMMENT_ID" ]]; then
             if [[ ! "$REVIEW_COMMENT_ID" =~ ^[1-9][0-9]*$ ]]; then
               printf '%s\n' 'Expected a positive review comment ID.' >&2
               exit 1
             fi
 
             review_comment=$(gh api "repos/$GITHUB_REPOSITORY/pulls/comments/$REVIEW_COMMENT_ID")
-            if ! jq -e --arg pr_url "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+            if ! jq -e --arg pr_url "$GITHUB_API_URL/$pr_endpoint" \
               '.pull_request_url == $pr_url and .in_reply_to_id == null' >/dev/null <<< "$review_comment"; then
               printf '%s\n' 'The review comment must be the first comment of a thread on the selected PR.' >&2
               exit 1
             fi
 
-            endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/comments/$REVIEW_COMMENT_ID/replies"
+            endpoint="$pr_endpoint/comments/$REVIEW_COMMENT_ID/replies"
             target="review thread #$REVIEW_COMMENT_ID on $target"
           fi
 
@@ -76,9 +119,8 @@ jobs:
           fi
 
           if [[ -z "$COMMENT_BODY" ]]; then
-            printf '%s\n' 'Comment text is required when publishing.' >&2
+            printf '%s\n' 'Comment text or a review summary is required when publishing.' >&2
             exit 1
           fi
 
-          gh api --method POST "$endpoint" \
-            --raw-field "body=$COMMENT_BODY" --jq '.html_url'
+          gh api --method POST "$endpoint" --input - --jq '.html_url' <<< "$payload"
