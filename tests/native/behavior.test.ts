@@ -182,3 +182,46 @@ await test("the hidden SoundCloud graph outputs audio in dry, bass, wet, and res
     assert(await peak() < before * 1.3);
   });
 });
+
+await test("bypass preserves the level of mixed mono and 5.1 sources on load and after disabling effects", async () => {
+  await scenario("bypass-channels", async fixture => {
+    const page = await fixture.player(soundcloud);
+    await fixture.read(page, `(() => {
+      player.pause();
+      siteSource.disconnect(siteContext.destination);
+      const reference = new GainNode(siteContext, { channelCount: 2, channelCountMode: 'explicit' });
+      const referenceMeter = siteContext.createAnalyser();
+      reference.connect(referenceMeter).connect(new GainNode(siteContext, { gain: 0 })).connect(siteContext.destination);
+      window.referencePeak = () => window.outputPeak(referenceMeter);
+      const mono = new ConstantSourceNode(siteContext, { offset: 0.25 });
+      const surround = new ChannelMergerNode(siteContext, { numberOfInputs: 6 });
+      const front = new ConstantSourceNode(siteContext, { offset: 0.03125 });
+      front.connect(surround, 0, 0);
+      front.connect(surround, 0, 1);
+      for (const source of [mono, surround]) {
+        source.connect(siteContext.destination);
+        source.connect(reference);
+      }
+      window.mixStartedAt = siteContext.currentTime + 0.05;
+      mono.start(window.mixStartedAt);
+      front.start(window.mixStartedAt);
+    })()`);
+    await fixture.wait(page, "siteContext.currentTime > window.mixStartedAt + 0.12");
+    assert.equal(await fixture.read(page, "__lazyReverb.get().enabled"), false);
+    const native = await fixture.read(page, "window.referencePeak()");
+    assert.equal(native, 0.28125);
+    assert.equal(await fixture.read(page, "window.outputPeak()"), native);
+
+    const panel = await fixture.panel(page);
+    await fixture.slider(panel, "bass", 6);
+    await fixture.slider(panel, "mix", 1);
+    await fixture.click(panel, "#enabled");
+    await fixture.wait(page, `__lazyReverb.get().enabled && __lazyReverb.get().bass === 6 && __lazyReverb.get().mix === 1
+      && window.impulses.some(node => node.buffer !== null) && Math.abs(window.outputPeak() - ${native}) > 0.02`);
+
+    await fixture.click(panel, "#enabled");
+    await fixture.wait(page, `!__lazyReverb.get().enabled && window.impulses.every(node => node.buffer === null)
+      && Math.abs(window.outputPeak() - ${native}) < 0.000001`);
+    assert.equal(await fixture.read(page, "window.referencePeak()"), native);
+  });
+});

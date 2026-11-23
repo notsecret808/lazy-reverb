@@ -34,7 +34,7 @@ flowchart LR
 
 At 0 dB bass, the graph bypasses the filter. At 0% reverb, it disconnects the convolution branch and clears the buffer. The engine creates nodes on demand, reuses them, and rewires the graph only when a branch is enabled or disabled. Gain changes use `setTargetAtTime` for smoothing.
 
-Bass boost applies without automatic gain compensation. Loud signals may clip. The output has no added distortion stage or compressor. Turning the effects off leaves `input → dry → destination` at unity gain.
+Bass boost applies without automatic gain compensation. Loud signals may clip. The output has no added distortion stage or compressor. Turning the effects off leaves `input → dry → destination` at unity gain. When the graph is created, `input` copies `channelCount`, `channelCountMode`, and `channelInterpretation` from the output. This applies the output's channel conversion to each connection before the signals are summed.
 
 ## Discovery and resource ownership
 
@@ -56,7 +56,7 @@ An already loaded MAIN script stays in its document when the extension is remove
 | --- | --- |
 | Unit tests | Parameter validation, UI queue, resource ownership, garbage collection, and graph size |
 | Native WebdriverIO scenarios | ZIP installation, automatic MAIN startup, real `storage`, `scripting`, and `commands`, tab isolation, SPA changes, CORS, and keyboard controls in Firefox 159 and Zen 1.24.3b |
-| Native signal check | Measures the output path of the detached test player and verifies dry output, bass gain, wet tail, impulse release, and restoration of the original signal |
+| Native signal check | Measures the output path of the detached test player and verifies dry output, bass gain, wet tail, impulse release, and restoration of the original signal. It also compares bypass for mixed mono and 5.1 sources with a direct stereo reference on load and after toggling effects. |
 | Local performance gate | Synthetic DSP CPU/PSS and post-bypass measurements with noise detection |
 | Manual checks | Physical shortcut, audio, and compatibility with current service players |
 

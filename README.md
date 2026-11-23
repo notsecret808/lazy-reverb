@@ -51,7 +51,7 @@ The extension has no background process, network requests, analytics, timer poll
 
 The bass and convolution nodes are created on demand. At 0 dB bass, the filter is disconnected. At 0% reverb, the convolution branch is disconnected and its buffer is released. Turning effects off restores the original rate and pitch setting and bypasses both DSP branches. Playback-rate changes alone need no `AudioContext` for an ordinary media player.
 
-After a player is routed into Web Audio, a dry path keeps it audible. Browsers allow one `MediaElementAudioSourceNode` per element, and suspending its context would mute it. Reload a page after removing or disabling the extension to unload its injected engine.
+After a player is routed into Web Audio, a unity-gain dry path keeps it audible. The input uses the output's channel settings at connection time so mono and surround sources mix as they do at the browser output. Browsers allow one `MediaElementAudioSourceNode` per element, and suspending its context would mute it. Reload a page after removing or disabling the extension to unload its injected engine.
 
 Players and contexts are tracked through weak references. For paused players removed from the DOM, the engine restores the original settings and disconnects any extension-owned source. A detached `new Audio()` that is still playing stays active. Cleanup preserves site-owned contexts and sources.
 
