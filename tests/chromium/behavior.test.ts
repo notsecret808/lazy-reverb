@@ -7,6 +7,9 @@ import { dist } from "../../tools/build.js";
 import { withChromium } from "../../tools/chromium-session.js";
 import { packageExtension } from "../../tools/package.js";
 import { fixtureResponses } from "../native/player-fixture.js";
+import { testStandaloneRack } from "./effects-rack.js";
+
+const archive = process.env.LAZY_REVERB_CHROMIUM_ARCHIVE ?? (await packageExtension("chromium")).archive;
 
 async function slider(panel: Page, id: string, value: number) {
   await panel.locator("#" + id).evaluate((element, setting) => {
@@ -17,7 +20,6 @@ async function slider(panel: Page, id: string, value: number) {
 }
 
 await test("Chromium installs the production ZIP and controls a hidden SoundCloud graph", { timeout: 60_000 }, async () => {
-  const archive = process.env.LAZY_REVERB_CHROMIUM_ARCHIVE ?? (await packageExtension("chromium")).archive;
   const artifacts = join(dist, "native-chromium");
   await mkdir(artifacts, { recursive: true });
   const journal: { url: string; action: string }[] = [];
@@ -61,6 +63,24 @@ await test("Chromium installs the production ZIP and controls a hidden SoundClou
       await reopened.waitForFunction(() => document.querySelector<HTMLInputElement>("#enabled")?.disabled === false);
       assert.equal(await reopened.locator("#bass").inputValue(), "6");
       assert.equal(await second.evaluate(() => window.__lazyReverb?.get().enabled), false);
+      await second.locator("#play").click();
+      await reopened.locator("#enabled").check();
+      await second.waitForFunction(() => {
+        const state = window.__lazyReverb?.get();
+        return state?.enabled && state.graphCount === 1 && state.blockedCount === 0 && !window.player.paused;
+      });
+      const blocked = await context.newPage();
+      await blocked.goto("https://www.youtube.com/player?blocked=1");
+      const blockedPanel = await session.openPanel(blocked);
+      await blockedPanel.waitForFunction(() => document.querySelector<HTMLInputElement>("#enabled")?.disabled === false);
+      await blocked.locator("#play").click();
+      await slider(blockedPanel, "rate", 0.85);
+      await blockedPanel.locator("#enabled").check();
+      await blocked.waitForFunction(() => {
+        const state = window.__lazyReverb?.get();
+        return state?.enabled && state.graphCount === 0 && state.blockedCount === 1
+          && !window.player.paused && window.player.playbackRate === 0.85;
+      });
       const unrelated = await context.newPage();
       await unrelated.goto("https://unsupported.test/player");
       assert.equal(await unrelated.evaluate(() => window.earlyEngine), false);
@@ -73,3 +93,5 @@ await test("Chromium installs the production ZIP and controls a hidden SoundClou
     }
   });
 });
+
+await testStandaloneRack(archive);

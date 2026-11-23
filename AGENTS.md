@@ -2,7 +2,7 @@
 
 ## Purpose and scope
 
-Lazy Reverb is a small WebExtension for **Zen Browser** and Firefox 128+. It offers 0.5–2× playback with pitch following speed, 0–100% reverb, and 0–12 dB bass boost on YouTube, YouTube Music, and SoundCloud. Keep overhead low and the controls simple.
+Lazy Reverb is a small WebExtension for **Zen Browser**, Firefox 128+, and Chromium 128+. It offers 0.5–2× playback with pitch following speed, 0–100% reverb, and 0–12 dB bass boost on YouTube, YouTube Music, and SoundCloud. Keep overhead low and the controls simple.
 
 Follow the environment instructions and any parent AGENTS.md. Use RTK for shell commands where the environment requires it. The project itself does not require RTK. Start with this file, README.md, ARCHITECTURE.md, and the files relevant to the task. Do not scan the home directory or user browser profiles.
 
@@ -11,10 +11,11 @@ Follow the environment instructions and any parent AGENTS.md. Use RTK for shell 
 | File | Responsibility |
 | --- | --- |
 | `wxt.config.ts`, `src/extension-hosts.ts`, `src/entrypoints/` | Target manifests, permissions, supported URLs, early MAIN entry, and shortcut defaults |
-| `src/engine.ts` | Audio graph, player discovery, playback rate, effect state, and `window.__lazyReverb.get()/set()` |
+| `src/engine.ts`, `src/tracked-player.ts` | Per-document engine, weak player and rack registries, playback rate, and `window.__lazyReverb.get()/set()` |
+| `src/effects-rack.ts`, `src/site-audio-bridge.ts` | Standalone Web Audio effects and interception of site connections to the context destination |
 | `src/entrypoints/popup.html`, `src/popup.css`, `src/popup.ts` | Popup, current-tab controls, local preferences, and the update queue |
 | `tests/engine.test.ts`, `tests/popup.test.ts` | Behavior of the bundled engine and popup |
-| `tests/native/`, `tools/browser-session.ts` | Native tests of the real ZIP in temporary Firefox or Zen profiles, using local fixtures and audio measurements |
+| `tests/native/`, `tests/chromium/`, `tools/*-session.ts` | Native tests of the real ZIP in temporary browser profiles, using local fixtures and audio measurements |
 | `tools/performance.ts`, `tools/process-sampler.ts`, `tools/performance-gate.ts`, `performance-budget.json` | Comparative CPU/PSS sampling, validation, budget checks, and noise detection |
 | `tests/performance-gate.test.ts`, `tests/process-sampler.test.ts`, `tools/test.ts` | CPU/PSS fixtures and the combined functional check, which builds once |
 | `tools/build.ts`, `tools/package.ts`, `tools/extension-files.ts` | WXT target builds and validation of runtime files and ZIP contents |

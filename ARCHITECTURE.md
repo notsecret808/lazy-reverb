@@ -6,9 +6,11 @@
 flowchart LR
   UI[Extension popup] -->|scripting.executeScript, MAIN| API[window.__lazyReverb]
   UI <-->|storage.local| Preferences[Local preferences]
-  API --> Media[Media playback rate and pitch]
-  API --> Rack[Audio graph in the current page]
-  Rack --> Native[Native Web Audio]
+  API --> Engine[WebAudioEngine]
+  Engine --> Media[TrackedPlayer]
+  Engine --> Rack[EffectsRack per context]
+  Site[Site connects audio to its output] --> Bridge[SiteAudioBridge]
+  Bridge --> Rack
 ```
 
 WXT generates a Manifest V3 file for each target. The content entry loads the engine in `MAIN` at `document_start` on supported sites. This lets the engine see detached players and Web Audio connections created during page startup. There is no background script.
@@ -19,7 +21,11 @@ The page can call `window.__lazyReverb.get()/set()` for its own effects. The eng
 
 ## Audio graph
 
-For an ordinary HTML player, the engine sets `playbackRate` and uses `preservesPitch = false` to let pitch follow speed. It creates one `MediaElementAudioSourceNode` when DSP is needed. For a site-owned graph, the engine intercepts final connections to `AudioContext.destination` and preserves the intermediate connections. Each context gets one effects rack.
+For an ordinary HTML player, `TrackedPlayer` saves its original settings, applies `playbackRate`, and uses `preservesPitch = false`. When DSP is needed, the engine asks a media adapter for one `MediaElementAudioSourceNode`. The same adapter handles resuming a context.
+
+`SiteAudioBridge` redirects connections to `AudioContext.destination` into the engine's one `EffectsRack` per context. The bridge preserves intermediate connections and supplies the original native methods for wiring the rack.
+
+The rack also works in an ordinary Web Audio graph. Pass a context and a destination node, then connect a source to its input. The rack owns its effect nodes and can release them while the owner's context and output remain available.
 
 ```mermaid
 flowchart LR
