@@ -1,0 +1,60 @@
+name: Publish PR comment as GitHub App
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: string
+      body:
+        description: Comment text (required when publishing)
+        required: false
+        type: string
+      dry_run:
+        description: Verify GitHub App access without posting a comment
+        default: false
+        type: boolean
+
+permissions: {}
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main' && github.actor == 'notsecret808' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    environment: pr-comment-bot
+    steps:
+      - name: Create GitHub App token
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+
+      - name: Verify access and publish comment
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+          COMMENT_BODY: ${{ inputs.body }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            printf '%s\n' 'Expected a positive pull request number.' >&2
+            exit 1
+          fi
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --silent
+          if [[ "$DRY_RUN" == 'true' ]]; then
+            printf 'GitHub App access verified for PR #%s.\n' "$PR_NUMBER"
+            exit 0
+          fi
+
+          if [[ -z "$COMMENT_BODY" ]]; then
+            printf '%s\n' 'Comment text is required when publishing.' >&2
+            exit 1
+          fi
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --raw-field "body=$COMMENT_BODY" --jq '.html_url'
