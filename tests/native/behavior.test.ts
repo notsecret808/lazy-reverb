@@ -23,7 +23,7 @@ declare global {
 
 const browserPath = process.env.LAZY_REVERB_BROWSER ?? "/usr/bin/firefox";
 const driver = process.env.LAZY_REVERB_GECKODRIVER ?? resolve("dist/drivers/geckodriver");
-const archive = process.env.LAZY_REVERB_ARCHIVE ?? resolve("dist/lazy-reverb-0.3.0.zip");
+const archive = process.env.LAZY_REVERB_ARCHIVE ?? resolve("dist/lazy-reverb-0.3.0-firefox.zip");
 const artifacts = process.env.LAZY_REVERB_ARTIFACTS ?? "dist/native";
 const youtube = "https://www.youtube.com/player";
 const soundcloud = "https://soundcloud.com/player";
@@ -122,7 +122,9 @@ await test("the popup handles presets, keyboard input, and the shortcut", async 
       return window.__lazyReverb?.get().enabled === false
         && window.player.playbackRate === 1.25 && window.player.preservesPitch && !window.player.paused;
     }));
-    await panel.execute(() => browser.commands.reset("_execute_action"));
+    await fixture.wait("The popup did not display the default shortcut", () => panel.execute(() =>
+      document.querySelector("#shortcut")?.textContent === "Ctrl+Shift+F8 — open the popup"));
+    await panel.execute(() => browser.commands.update({ name: "_execute_action", shortcut: "Alt+Shift+L" }));
     await fixture.click(panel, "#shortcut-reset");
     await fixture.wait("The popup did not assign the shortcut", () => panel.execute(async () => {
       const commands = await browser.commands.getAll();

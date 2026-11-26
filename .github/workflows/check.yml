@@ -53,11 +53,13 @@ jobs:
           tar -xzf dist/ci-browser/geckodriver.tar.gz -C dist/ci-browser geckodriver
           dist/ci-browser/firefox/firefox --version
           dist/ci-browser/geckodriver --version
+      - name: Install the pinned Chromium test browser
+        run: pnpm exec playwright install --with-deps chromium
       - name: Install virtual audio output dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends dbus-daemon pulseaudio pulseaudio-utils
-      - name: Unit, native Firefox and ZIP checks
+      - name: Unit, native Firefox and Chromium, and ZIP checks
         run: |
           dbus-run-session -- bash -euc '
             audio_dir=$(mktemp -d "$RUNNER_TEMP/audio.XXXXXX")

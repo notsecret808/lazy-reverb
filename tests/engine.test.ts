@@ -1,10 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import type { EffectState } from "../src/engine-api.js";
+import { readExtensionFiles } from "../tools/extension-files.js";
 
-const code = readFileSync(new URL("../dist/firefox/engine.js", import.meta.url), "utf8");
+const runtime = new URL("../dist/firefox/", import.meta.url);
+const { engine } = await readExtensionFiles(fileURLToPath(runtime));
+const code = readFileSync(new URL(engine, runtime), "utf8");
 
 function fixture(sourceCode = code) {
   const contexts: Context[] = [];
@@ -57,6 +61,7 @@ function fixture(sourceCode = code) {
       return { getChannelData: c => data[c], length: size, sampleRate: rate };
     }
     createMediaElementSource(element: Media) {
+      if (element.failSource) throw new Error("Native source unavailable");
       if (sourceOwners.has(element)) throw new Error("HTML media can only be sourced once");
       sourceOwners.add(element);
       const source = new Node(this);
@@ -73,6 +78,7 @@ function fixture(sourceCode = code) {
     paused = false;
     isConnected = false;
     played = false;
+    failSource = false;
     mediaKeys: object | null = null;
     events: Record<string, () => void> = {};
     constructor(readonly src = "https://www.youtube.com/audio") { this.currentSrc = src; }
@@ -87,14 +93,60 @@ function fixture(sourceCode = code) {
     addEventListener(name: string, fn: (event: { target: Media }) => void) { events[name] = fn; },
   };
   const window: { __lazyReverb?: { get(): EffectState; set(options: unknown): EffectState } } = {};
-  vm.runInNewContext(sourceCode, {
+  const realm = vm.createContext({
     window, document, AudioNode: Node, AudioContext: Context, HTMLMediaElement: Media,
     location: { href: "https://www.youtube.com/watch?v=test", origin: "https://www.youtube.com" }, URL,
     MutationObserver: class { constructor() { throw Error("DOM observation is not needed"); } },
   });
+  const boot = () => {
+    vm.runInContext(sourceCode, realm);
+    return window.__lazyReverb;
+  };
+  boot();
   assert(window.__lazyReverb);
-  return { api: window.__lazyReverb, elements, Media, Context, Node, stats, events, contexts };
+  return { api: window.__lazyReverb, boot, elements, Media, Context, Node, stats, events, contexts };
 }
+
+await test("repeated bootstrap preserves the original facade and native hooks", () => {
+  const { api, boot, Media, Context, Node } = fixture();
+  const descriptors = () => [
+    Object.getOwnPropertyDescriptor(Media.prototype, "play"),
+    Object.getOwnPropertyDescriptor(Context.prototype, "createMediaElementSource"),
+    Object.getOwnPropertyDescriptor(Node.prototype, "connect"),
+    Object.getOwnPropertyDescriptor(Node.prototype, "disconnect"),
+  ];
+  const hooks = descriptors();
+  assert.equal(boot(), api);
+  assert.deepEqual(descriptors(), hooks);
+});
+
+await test("a native source failure keeps rate control and allows a later retry", async () => {
+  const { api, elements, Media, contexts } = fixture();
+  const player = new Media();
+  player.failSource = true;
+  elements.push(player);
+  const failed = api.set({ enabled: true, rate: 0.9 });
+  assert.equal(failed.blockedCount, 1);
+  assert.match(failed.error, /Could not connect/);
+  assert.equal(player.playbackRate, 0.9);
+  assert.equal(contexts[0].sources.length, 0);
+  player.failSource = false;
+  await player.play();
+  assert.equal(contexts[0].sources.length, 1);
+  assert.equal(api.get().blockedCount, 0);
+});
+
+await test("the page play event detects autoplay without a call to the patched play method", () => {
+  const { api, Media, events, contexts } = fixture();
+  api.set({ enabled: true, rate: 0.7 });
+  const player = new Media();
+  player.isConnected = true;
+  events.play({ target: player });
+  events.play({ target: player });
+  assert.equal(player.playbackRate, 0.7);
+  assert.equal(api.get().mediaCount, 1);
+  assert.equal(contexts[0].sources.length, 1);
+});
 
 await test('off by default; enabling lowers pitch; bypass restores the original media settings', () => {
   const { api, elements, Media } = fixture();

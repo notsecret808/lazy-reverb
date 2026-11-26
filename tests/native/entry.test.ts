@@ -7,7 +7,7 @@ import { interceptFixture } from "./player-fixture.js";
 
 const browser = process.env.LAZY_REVERB_BROWSER ?? "/usr/bin/firefox";
 const driver = process.env.LAZY_REVERB_GECKODRIVER ?? resolve("dist/drivers/geckodriver");
-const archive = process.env.LAZY_REVERB_ARCHIVE ?? resolve("dist/lazy-reverb-0.3.0.zip");
+const archive = process.env.LAZY_REVERB_ARCHIVE ?? resolve("dist/lazy-reverb-0.3.0-firefox.zip");
 const artifacts = process.env.LAZY_REVERB_ARTIFACTS ?? "dist/native";
 const fixture = "https://www.youtube.com/player";
 

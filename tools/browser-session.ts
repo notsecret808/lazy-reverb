@@ -9,6 +9,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { remote } from "webdriverio";
+import { archivePopup } from "./extension-files.js";
 
 type Client = Awaited<ReturnType<typeof remote>>;
 
@@ -40,7 +41,7 @@ export async function evaluate(client: Client, context: string, expression: stri
   return "value" in value.result ? value.result.value : undefined;
 }
 
-async function openPanel(client: Client, player: string, extensionId: string): Promise<string> {
+async function openPanel(client: Client, player: string, extensionId: string, popup: string): Promise<string> {
   const { context } = await client.browsingContextCreate({ type: "tab", background: true, referenceContext: player });
   const marker = `data:text/html,${randomUUID()}`;
   await client.browsingContextNavigate({ context, url: marker, wait: "complete" });
@@ -50,11 +51,11 @@ async function openPanel(client: Client, player: string, extensionId: string): P
   await client.setMozContext("chrome");
   try {
     await client.executeScript(`
-      const [id, marker] = arguments;
+      const [id, marker, popup] = arguments;
       const target = gBrowser.tabs.find(tab => tab.linkedBrowser.currentURI.spec === marker);
-      const uri = Services.io.newURI(WebExtensionPolicy.getByID(id).getURL("popup.html"));
+      const uri = Services.io.newURI(WebExtensionPolicy.getByID(id).getURL(popup));
       target.linkedBrowser.loadURI(uri, {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});
-    `, [extensionId, marker]);
+    `, [extensionId, marker, popup]);
   } finally {
     await client.setMozContext("content");
   }
@@ -107,10 +108,19 @@ export async function withBrowser<T>(options: BrowserOptions, run: (session: Bro
     await connection.sessionSubscribe({ events: ["log.entryAdded"] });
     connection.on("log.entryAdded", entry => appendFileSync(consoleLog, `${JSON.stringify(entry)}\n`));
     await writeFile(join(options.artifacts, "versions.json"), `${JSON.stringify(connection.capabilities, null, 2)}\n`);
+    let popup: string | undefined;
     session = {
       client: connection, artifacts: options.artifacts, step: "starting the scenario",
-      async install(archive) { return connection.installAddOn((await readFile(archive)).toString("base64"), true); },
-      openPanel(player, extensionId) { return openPanel(connection, player, extensionId); },
+      async install(archive) {
+        const bytes = await readFile(archive);
+        const id = await connection.installAddOn(bytes.toString("base64"), true);
+        popup = archivePopup(bytes);
+        return id;
+      },
+      openPanel(player, extensionId) {
+        if (!popup) throw new Error("Install the extension before opening its popup");
+        return openPanel(connection, player, extensionId, popup);
+      },
     };
     const lifetime = AbortSignal.timeout(options.timeout ?? 60_000);
     return await Promise.race([

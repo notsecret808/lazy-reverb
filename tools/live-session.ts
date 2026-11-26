@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { buildExtension, dist } from "./build.js";
+import { dist } from "./build.js";
 import { defaultDriver, evaluate, withBrowser } from "./browser-session.js";
 import type { BrowserSession } from "./browser-session.js";
 import { packageExtension } from "./package.js";
@@ -38,7 +38,7 @@ export function liveArguments(mode: Mode) {
 }
 
 export async function liveSession<T>(mode: Mode, options: { browser: string; driver: string }, run: (session: BrowserSession, id?: string) => Promise<T>): Promise<T> {
-  const archive = mode === "control" ? undefined : await packageExtension(await buildExtension());
+  const archive = mode === "control" ? undefined : (await packageExtension()).archive;
   return withBrowser({ ...options, artifacts: join(dist, `live-artifacts-${mode}`), timeout: 360_000 }, async session => {
     const id = archive ? await session.install(archive) : undefined;
     return run(session, id);

@@ -19,6 +19,7 @@
     "package": "node --import tsx tools/package.ts",
     "test": "node --import tsx tools/test.ts native",
     "test:unit": "node --import tsx tools/test.ts unit",
+    "test:chromium": "node --import tsx --test tests/chromium/behavior.test.ts",
     "check": "node --import tsx tools/test.ts check",
     "check:perf": "node --import tsx tools/performance.ts",
     "live:probe": "node --import tsx tools/live-probe.ts",
@@ -28,15 +29,17 @@
   "devDependencies": {
     "@commitlint/cli": "21.2.4",
     "@commitlint/config-conventional": "21.2.4",
+    "@resvg/resvg-js": "2.6.2",
     "@types/firefox-webext-browser": "143.0.1",
     "@types/node": "^22.20.5",
-    "esbuild": "0.28.2",
     "fflate": "0.8.3",
     "husky": "^9.1.7",
     "oxlint": "1.94.0",
     "oxlint-tsgolint": "7.0.2007",
+    "playwright": "1.65.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "webdriverio": "10.2.0"
+    "webdriverio": "10.2.0",
+    "wxt": "0.21.5"
   }
 }

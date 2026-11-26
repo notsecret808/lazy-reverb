@@ -1,18 +1,21 @@
 # Lazy Reverb
 
-Change playback speed and pitch, add reverb, and boost bass on YouTube, YouTube Music, and SoundCloud in **Zen Browser** and Firefox 128+. Audio stays in the browser. The extension needs no server, account, or track download.
+Change playback speed and pitch, add reverb, and boost bass on YouTube, YouTube Music, and SoundCloud. Lazy Reverb builds for **Zen Browser**, Firefox 128+, and Chromium 128+. Audio stays in the browser.
 
 ## Build a ZIP for the browser
 
 After installing the dependencies below, run this from the project directory:
 
 ```sh
-pnpm run package
+pnpm run package --target all
 ```
 
-The command creates `dist/lazy-reverb-0.3.0.zip` from a fresh build in `dist/firefox/`. The ZIP includes the six extension files. To load it temporarily in Zen, open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on…**, and choose the ZIP. The package is unsigned.
+WXT generates a fresh Manifest V3 build for each target. Both `pnpm run build` and `pnpm run package` take `--target firefox`, `--target chromium`, or `--target all`. Firefox is the default.
 
-To load an unpacked build, run `pnpm run build` and choose its manifest instead.
+| Target | Build directory | Unsigned ZIP |
+| --- | --- | --- |
+| Firefox and Zen | `dist/firefox/` | `dist/lazy-reverb-0.3.0-firefox.zip` |
+| Chromium | `dist/chromium/` | `dist/lazy-reverb-0.3.0-chromium.zip` |
 
 ## Install and update in Zen
 
@@ -24,16 +27,25 @@ To load an unpacked build, run `pnpm run build` and choose its manifest instead.
 
 The current version is **0.3.0**. For a directory installation, run `pnpm run build` after updating and select **Reload** in `about:debugging`. For a ZIP installation, run `pnpm run package` and select the fresh archive through **Load Temporary Add-on…**. Then refresh your music tabs.
 
-If you installed the extension from the repository root before the TypeScript migration, Zen still loads the popup from that directory. The scripts now live in `dist/firefox/`, so the old popup stalls at its connecting message. In `about:debugging`, select **Load Temporary Add-on…** and choose `dist/firefox/manifest.json` after building or `dist/lazy-reverb-0.3.0.zip` after packaging. Then refresh your music tab.
+If you installed the extension from the repository root before the TypeScript migration, Zen still loads the popup from that directory. Rebuild and select `dist/firefox/manifest.json` or the Firefox ZIP in `about:debugging`, then refresh your music tab.
 
 Temporary add-ons are removed when the browser restarts. Permanent installation requires Mozilla signing.
+
+## Install in Chromium
+
+1. Build with `pnpm run build --target chromium` or extract the Chromium ZIP.
+2. Open `chrome://extensions` and turn on **Developer mode**.
+3. Select **Load unpacked** and choose the directory containing `manifest.json`.
+4. Refresh your music tabs and open Lazy Reverb from the extensions menu.
+
+These packages are for local installation. Store submission, signing, and published updates use a separate release process.
 
 ## Quick access
 
 - To pin the icon, open the Zen extensions menu, right-click **Lazy Reverb**, and select **Pin to Toolbar**. [Zen extensions guide](https://docs.zen-browser.app/user-manual/extensions)
-- The default shortcut is **Ctrl+Shift+F8**. The popup shows the shortcut currently registered in the browser.
-- If an older shortcut remains after an update, select **Assign Ctrl+Shift+F8** in the popup.
-- To choose a different shortcut, open `about:addons`, select the gear, and choose **Manage Extension Shortcuts**. A conflicting system shortcut can prevent the popup from opening.
+- The default is **Ctrl+Shift+F8** on Firefox and Zen, **Ctrl+Shift+Y** on Chromium, and **Command+Shift+Y** for Chromium on macOS. The popup shows the shortcut reported by the browser.
+- On Firefox and Zen, select **Assign Ctrl+Shift+F8** to restore the default, or use **Manage Extension Shortcuts** from the gear menu in `about:addons` to choose another key.
+- On Chromium, select **Open shortcut settings** to change the binding in the browser. A conflicting system shortcut can prevent the popup from opening.
 
 ## Controls
 
@@ -66,7 +78,7 @@ Players and contexts are tracked through weak references. For paused players rem
 
 ## Development and checks
 
-The runtime is six files in `dist/firefox/`. Use the Node version in `.nvmrc` and the pnpm version in `packageManager`. Install pnpm into the selected Node environment with `npm install --global pnpm@11.6.0` if needed.
+WXT builds each target using the Node version in `.nvmrc` and the pnpm version in `packageManager`. Install pnpm into the selected Node environment with `npm install --global pnpm@11.6.0` if needed.
 
 ```sh
 nvm install
@@ -77,9 +89,10 @@ pnpm run typecheck
 pnpm run test:unit
 ```
 
-Native checks require GeckoDriver 0.37.1. Put it in `dist/drivers/geckodriver`, add it to `PATH`, or pass `--driver /path/to/geckodriver`. Run `pnpm test --browser /path/to/firefox` for the native scenarios. For the full functional gate with Zen, run:
+Native checks use GeckoDriver 0.37.1 and the Chromium browser pinned by Playwright. Put GeckoDriver in `dist/drivers/geckodriver`, add it to `PATH`, or pass `--driver /path/to/geckodriver`. Run `pnpm test --browser /path/to/firefox` to check both targets against production packages. For the full functional gate with Zen and Chromium, run:
 
 ```sh
+pnpm exec playwright install chromium
 pnpm run check --browser /opt/zen/zen
 ```
 
@@ -87,17 +100,19 @@ Use `rtk run` in environments that require RTK.
 
 Oxlint checks the authored source, tools, configuration, and tests with type information. Warnings, violations, and backend errors fail the check. `tsc --noEmit` checks the browser and Node projects separately. Both run before the build and browser checks, without auto-fixing files or suppressing nonzero exit codes. Unit tests run the built JavaScript, including garbage-collection coverage with `--expose-gc`. [TypeScript migration test coverage](docs/typescript-migration-coverage.md)
 
-The dependency install runs `prepare`, which enables Husky. Pre-commit runs `check:commit` for the OpenSpec boundary, source/index parity, lint, types, and unit tests. Commit-msg enforces Conventional Commits. Pre-push checks the tree being pushed against HEAD, then runs the native functional and local Zen DSP gates. A failing step blocks the push. If Zen is installed outside `/opt/zen/zen`, set `LAZY_REVERB_BROWSER` for native tests and `LAZY_REVERB_ZEN` for the DSP gate. For GUI commits, launch your Git client from the shell after `nvm use` or set the selected Node and pnpm paths in your `~/.config/husky/init.sh`. Install both tools before committing.
+The dependency install runs `prepare`, which enables Husky. Pre-commit runs `check:commit` for the OpenSpec boundary, source/index parity, lint, types, and unit tests. Commit-msg enforces Conventional Commits. Pre-push checks the tree being pushed against HEAD, then runs the functional and local DSP gates for both browser targets. A failing step blocks the push. If Zen is installed outside `/opt/zen/zen`, set `LAZY_REVERB_BROWSER` for native tests and `LAZY_REVERB_ZEN` for the DSP gate. For GUI commits, launch your Git client from the shell after `nvm use` or set the selected Node and pnpm paths in your `~/.config/husky/init.sh`. Install both tools before committing.
 
-The functional gate builds the runtime and ZIP once. Native scenarios install that archive. Unit tests also cover garbage collection, player restoration, routing, and API delays. The native audio scenario measures the main output before enabling effects, with bass and reverb, and after bypass and resumed playback.
+The functional gate builds one production ZIP per target. Each browser test installs its corresponding ZIP. Unit tests also cover garbage collection, player restoration, routing, and API delays. The native audio scenario measures the main output before enabling effects, with bass and reverb, and after bypass and resumed playback.
 
 ### End-to-end test isolation
 
-The end-to-end tests use local HTML from `tests/native/fixtures/player.html` and WAV data from `tests/native/player-fixture.ts`. BiDi substitutes responses before navigation and aborts other HTTP(S) requests. The `www.youtube.com` and `soundcloud.com` domains serve as test origins. Service workers are disabled. GeckoDriver uses a temporary profile and terminates the processes it owns.
+Run `pnpm run test:chromium` for just the Chromium scenarios. The runner extracts the generated ZIP for a temporary browser profile and opens the real popup. It uses the same local HTML and WAV responses as the Firefox tests.
+
+The end-to-end tests use local HTML from `tests/native/fixtures/player.html` and WAV data from `tests/native/player-fixture.ts`. BiDi and Playwright substitute responses before navigation and abort other HTTP(S) requests. The `www.youtube.com` and `soundcloud.com` domains serve as test origins. Service workers are disabled. GeckoDriver uses a temporary profile and terminates the processes it owns.
 
 The native WebdriverIO scenarios install the ZIP and load the real popup document while the music tab is active. They cover browser APIs, tab isolation, preferences, keyboard input, CORS, and audio output through the main route. On failure, the runner saves available screenshots, HTML, console output, driver logs, and the scenario step. Opening the popup from the toolbar and pressing its physical shortcut are manual checks.
 
-GitHub Actions uses Firefox 159.0 and GeckoDriver 0.37.1, with a dedicated PulseAudio instance and virtual sink for native audio tests. CI checks the commit range, lint, types, unit tests including sampler and verdict fixtures, native Firefox, and packaging. Zen and the hardware-dependent CPU/PSS gate run locally. Native artifacts are written to `dist/native/`. Pass `--screenshot /path/to/popup.png` for a popup screenshot.
+GitHub Actions uses Firefox 159.0, GeckoDriver 0.37.1, and the pinned Chromium browser, with a dedicated PulseAudio instance and virtual sink for native audio tests. CI checks the commit range, lint, types, unit tests, packaging, and both native targets. Zen and the hardware-dependent CPU/PSS gate run locally. Native artifacts are written to `dist/native/` and `dist/native-chromium/`. Pass `--screenshot /path/to/popup.png` for a popup screenshot.
 
 ### Performance gate
 
@@ -105,6 +120,7 @@ After changing the audio graph or resource cleanup, run:
 
 ```sh
 pnpm run check:perf --browser /opt/zen/zen
+pnpm run check:perf --target chromium
 ```
 
 Method 2 measures DSP on Linux with one `AudioContext` and one stereo source. A real click starts playback. The harness checks the audio clock and output signal before and after each sampling window. After warmup, each phase records four CPU/PSS samples and their actual intervals of about 3 seconds. Both summaries use the median. The previous method used the final sample for PSS. Measurements include the browser root process and its descendants. 100% CPU means one core.
@@ -115,7 +131,7 @@ Method 2 measures DSP on Linux with one `AudioContext` and one stereo source. A 
 | CPU with 25% reverb and +6 dB bass | 20 percentage points of one core |
 | PSS memory | 64 MiB above the original native route |
 
-Budgets are in `performance-budget.json`. Exit code `0` means pass, `1` means a regression, and `2` means noisy or incomplete data. The two control routes expose drift. Missing processes or samples prevent a pass. `dist/performance-zen.json` contains the versions, state, and results. The hardware benchmark is required locally before pushing. CI covers the sampler and verdict with deterministic fixtures.
+Budgets are in `performance-budget.json`. Exit code `0` means pass, `1` means a regression, and `2` means noisy or incomplete data. The two control routes expose drift. Missing processes or samples prevent a pass. `dist/performance-zen.json` and `dist/performance-chromium.json` contain the versions, state, and results for their respective targets. The hardware benchmark is required locally before pushing. CI covers the sampler and verdict with deterministic fixtures.
 
 The benchmark measures bass and convolution and the return toward baseline after bypass. Its scope excludes HTML media decoding, rate changes, and full YouTube or SoundCloud pages. Results vary by machine.
 

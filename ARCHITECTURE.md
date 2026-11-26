@@ -6,20 +6,26 @@
 flowchart LR
   UI[Extension popup] -->|scripting.executeScript, MAIN| API[window.__lazyReverb]
   UI <-->|storage.local| Preferences[Local preferences]
-  API --> Media[Media playback rate and pitch]
-  API --> Rack[Audio graph in the current page]
-  Rack --> Native[Native Web Audio]
+  API --> Engine[WebAudioEngine]
+  Engine --> Media[TrackedPlayer]
+  Engine --> Rack[EffectsRack per context]
+  Site[Site connects audio to its output] --> Bridge[SiteAudioBridge]
+  Bridge --> Rack
 ```
 
-`manifest.json` limits the supported sites and loads the engine in `MAIN` at `document_start`. This lets the engine see detached players and Web Audio connections created during page startup. There is no background script.
+WXT generates a Manifest V3 file for each target. The content entry loads the engine in `MAIN` at `document_start` on supported sites. This lets the engine see detached players and Web Audio connections created during page startup. There is no background script.
 
-`src/popup.ts` checks the active tab's URL and sends settings through `browser.scripting.executeScript`. A revision counter in the queue skips obsolete slider changes. The popup stores the applied preferences in `storage.local`. Each page keeps its own enabled flag. `browser.commands` reads and assigns the popup shortcut.
+`src/popup.ts` checks the active tab's URL and sends settings through `browser.scripting.executeScript`. A revision counter in the queue skips obsolete slider changes. The popup stores the applied preferences in `storage.local`. Each page keeps its own enabled flag. `src/shortcuts.ts` reads the registered binding and exposes the available edit action. Firefox updates the binding through the commands API. Chromium opens its built-in shortcut settings. Additional shortcut behavior is tracked under `improve-extension-shortcuts`.
 
 The page can call `window.__lazyReverb.get()/set()` for its own effects. The engine validates input types and ranges. Extension APIs, storage, and permissions stay in the popup.
 
 ## Audio graph
 
-For an ordinary HTML player, the engine sets `playbackRate` and uses `preservesPitch = false` to let pitch follow speed. It creates one `MediaElementAudioSourceNode` when DSP is needed. For a site-owned graph, the engine intercepts final connections to `AudioContext.destination` and preserves the intermediate connections. Each context gets one effects rack.
+For an ordinary HTML player, `TrackedPlayer` saves its original settings, applies `playbackRate`, and uses `preservesPitch = false`. When DSP is needed, the engine asks a media adapter for one `MediaElementAudioSourceNode`. The same adapter handles resuming a context.
+
+`SiteAudioBridge` redirects connections to `AudioContext.destination` into the engine's one `EffectsRack` per context. The bridge preserves intermediate connections and supplies the original native methods for wiring the rack.
+
+The rack also works in an ordinary Web Audio graph. Pass a context and a destination node, then connect a source to its input. The rack owns its effect nodes and can release them while the owner's context and output remain available.
 
 ```mermaid
 flowchart LR
@@ -55,11 +61,11 @@ An already loaded MAIN script stays in its document when the extension is remove
 | Level | Coverage |
 | --- | --- |
 | Unit tests | Parameter validation, UI queue, resource ownership, garbage collection, and graph size |
-| Native WebdriverIO scenarios | ZIP installation, automatic MAIN startup, real `storage`, `scripting`, and `commands`, tab isolation, SPA changes, CORS, and keyboard controls in Firefox 159 and Zen 1.24.3b |
+| Native browser scenarios | Production ZIPs, early MAIN startup, real `storage`, `scripting`, and `commands`, tab isolation, and CORS. Firefox scenarios also check SPA changes and keyboard input. |
 | Native signal check | Measures the output path of the detached test player and verifies dry output, bass gain, wet tail, impulse release, and restoration of the original signal. It also compares bypass for mixed mono and 5.1 sources with a direct stereo reference on load and after toggling effects. |
 | Local performance gate | Synthetic DSP CPU/PSS and post-bypass measurements with noise detection |
 | Manual checks | Physical shortcut, audio, and compatibility with current service players |
 
-GeckoDriver launches a temporary browser profile. BiDi serves local HTML and WAV and aborts other HTTP(S) requests before navigation. Tests explicitly create the music tab because Zen's startup tab may be absent from `tabs.query`. GeckoDriver loads the installed popup document in a background tab, and BiDi addresses its context. Opening the popup from the toolbar and pressing the physical shortcut are manual checks.
+GeckoDriver and Playwright use temporary browser profiles, serve local HTML and WAV, and abort other HTTP(S) requests before navigation. GeckoDriver installs the Firefox ZIP and opens the music tab explicitly because the Zen startup tab may be absent from `tabs.query`. Chromium loads the runtime extracted from its ZIP. Both harnesses open the installed popup in a background tab while the music tab is active. The toolbar and physical shortcut require separate checks.
 
-The DSP fixture uses one context and source. BiDi checks the clock, signal, and effect activity before and after each phase. The Linux sampler tracks the browser and its descendants by PID and start time. The gate validates raw CPU/PSS samples before comparing them with the budgets. In method 2, phase PSS is the median of four samples. CI uses numeric fixtures. The local Zen measurement excludes HTML decoding and full service-page load.
+The DSP fixture uses one context and source. The same sampling loop checks the clock, signal, and effect activity before and after each phase in both browsers. The Linux sampler tracks the browser and its descendants by PID and start time. The gate validates raw CPU/PSS samples before comparing them with the budgets. In method 2, phase PSS is the median of four samples. CI uses numeric fixtures. The local measurements exclude HTML decoding and full service-page load.
