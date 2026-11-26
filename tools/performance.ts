@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { dist } from "./build.js";
 import { readExtensionFiles } from "./extension-files.js";
 import { defaultDriver, evaluate, withBrowser } from "./browser-session.js";
+import { withChromium } from "./chromium-session.js";
 import { assess, exitCodes, phases, readBudget, summarize } from "./performance-gate.js";
 import type { Phase, Sample } from "./performance-gate.js";
 import { browserPid, makeSampler, sampleDelta } from "./process-sampler.js";
@@ -51,11 +52,15 @@ function checkPlayback(value: unknown, phase: Phase): Playback {
   return data;
 }
 
-export interface PerformanceOptions { browser: string; driver: string; archive: string }
+export type PerformanceOptions = { archive: string } & (
+  { target: "firefox"; browser: string; driver: string } | { target: "chromium" }
+);
 
-export async function runPerformance(runtime: string, { browser, driver, archive }: PerformanceOptions): Promise<number> {
+export async function runPerformance(runtime: string, options: PerformanceOptions): Promise<number> {
+  const { target, archive } = options;
+  const name = target === "firefox" ? "zen" : target;
   const report = {
-    browser, logical_cpus: availableParallelism(), method_version: 2,
+    target, browser: target === "firefox" ? options.browser : "Chromium", logical_cpus: availableParallelism(), method_version: 2,
     method: "DSP-only, stereo AudioBufferSource, user-activated AudioContext; 10 s warmup, 2 s settling, four 3 s samples per phase, median CPU and PSS. CPU: percent of one core. PSS: Linux browser process group, MiB. Excludes real pages and HTML media decoding.",
     versions: { node: process.version, pnpm: process.env.npm_config_user_agent?.split(" ")[0], browser: "", driver: "" },
     results: [] as (ReturnType<typeof summarize> & { mode: Phase; samples: Sample[]; state: Playback; state_after: Playback })[],
@@ -77,37 +82,18 @@ export async function runPerformance(runtime: string, { browser, driver, archive
       paused: "bench.disconnect.call(bench.source);",
       native_after: "bench.direct.call(bench.source, bench.context.destination);",
     };
-    await withBrowser({ browser, driver, artifacts: join(dist, "performance-artifacts"), timeout: 150_000 }, async session => {
-      const { client } = session;
-      await session.install(archive);
-      await client.setMozContext("chrome");
-      try {
-        await client.executeScript("Services.io.manageOfflineStatus = false; Services.io.offline = true;", []);
-      } finally {
-        await client.setMozContext("content");
-      }
-      const capabilities: object = client.capabilities;
-      report.versions.browser = client.capabilities.browserVersion ?? "";
-      if ("moz:geckodriverVersion" in capabilities && typeof capabilities["moz:geckodriverVersion"] === "string") {
-        report.versions.driver = capabilities["moz:geckodriverVersion"];
-      }
-      const sampler = makeSampler(browserPid(capabilities));
-      const { context } = await client.browsingContextCreate({ type: "tab" });
-      session.context = context;
-      await client.browsingContextNavigate({
-        context, url: `data:text/html;charset=utf-8,${encodeURIComponent(fixture)}`, wait: "complete",
-      });
-      await client.switchToWindow(context);
-      await client.$("#play").click();
+    const url = `data:text/html;charset=utf-8,${encodeURIComponent(fixture)}`;
+    async function measure(pid: number, runScript: (expression: string) => Promise<unknown>, onPhase?: (phase: Phase) => void) {
+      const sampler = makeSampler(pid);
       await delay(1000);
-      checkPlayback(await evaluate(client, context, "verifyPlayback()"), "native_before");
+      checkPlayback(await runScript("verifyPlayback()"), "native_before");
       await delay(10_000);
       for (const mode of phases) {
-        session.step = mode;
+        onPhase?.(mode);
         const script = scripts[mode];
-        if (script) await evaluate(client, context, script);
+        if (script) await runScript(script);
         await delay(2000);
-        const state = checkPlayback(await evaluate(client, context, "verifyPlayback()"), mode);
+        const state = checkPlayback(await runScript("verifyPlayback()"), mode);
         const samples: Sample[] = [];
         let before = sampler.snapshot();
         for (let index = 0; index < 4; index++) {
@@ -116,14 +102,54 @@ export async function runPerformance(runtime: string, { browser, driver, archive
           samples.push(sampleDelta(before, after, sampler.hz));
           before = after;
         }
-        const stateAfter = checkPlayback(await evaluate(client, context, "verifyPlayback()"), mode);
+        const stateAfter = checkPlayback(await runScript("verifyPlayback()"), mode);
         if (stateAfter.currentTime - state.currentTime < 6) throw new Error(`Audio clock stopped during ${mode}`);
         const row = { mode, ...summarize(samples), samples, state, state_after: stateAfter };
         report.results.push(row);
         console.log(`${mode}: ${row.cpu_percent_one_core}% CPU, ${row.pss_mib} MiB PSS`);
       }
       report.valid_playback = true;
-    });
+    }
+
+    if (target === "chromium") {
+      await withChromium(archive, async ({ context, browser, version }) => {
+        report.versions.browser = version;
+        await context.route(/^https?:\/\//i, route => route.abort());
+        const page = context.pages()[0];
+        await page.goto(url);
+        const { processInfo } = await browser.send("SystemInfo.getProcessInfo");
+        const pid = processInfo.find(process => process.type === "browser")?.id;
+        if (!pid) throw new Error("Chromium did not expose its browser PID");
+        await page.locator("#play").click();
+        await measure(pid, expression => page.evaluate(expression));
+      });
+    } else {
+      await withBrowser({ browser: options.browser, driver: options.driver, artifacts: join(dist, "performance-artifacts"), timeout: 150_000 }, async session => {
+        const { client } = session;
+        await session.install(archive);
+        await client.setMozContext("chrome");
+        try {
+          await client.executeScript("Services.io.manageOfflineStatus = false; Services.io.offline = true;", []);
+        } finally {
+          await client.setMozContext("content");
+        }
+        const capabilities: object = client.capabilities;
+        report.versions.browser = client.capabilities.browserVersion ?? "";
+        if ("moz:geckodriverVersion" in capabilities && typeof capabilities["moz:geckodriverVersion"] === "string") {
+          report.versions.driver = capabilities["moz:geckodriverVersion"];
+        }
+        const { context } = await client.browsingContextCreate({ type: "tab" });
+        session.context = context;
+        await client.browsingContextNavigate({
+          context, url, wait: "complete",
+        });
+        await client.switchToWindow(context);
+        await client.$("#play").click();
+        await measure(browserPid(capabilities), expression => evaluate(client, context, expression), phase => {
+          session.step = phase;
+        });
+      });
+    }
   } catch (error) {
     report.valid_playback = false;
     invalid = error instanceof Error ? error.message : String(error);
@@ -131,19 +157,25 @@ export async function runPerformance(runtime: string, { browser, driver, archive
   const gate = assess(report, await readBudget());
   if (invalid) gate.reasons.push(invalid);
   await mkdir(dist, { recursive: true });
-  const output = join(dist, "performance-zen.json");
+  const output = join(dist, `performance-${name}.json`);
   await writeFile(output, `${JSON.stringify({ ...report, gate }, null, 2)}\n`);
   console.log(`Performance gate: ${JSON.stringify(gate)}\n${output}`);
   return exitCodes[gate.status];
 }
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ options: { browser: { type: "string" }, driver: { type: "string" }, help: { type: "boolean" } } });
-  if (values.help) console.log("pnpm run check:perf [--browser /opt/zen/zen] [--driver /path/to/geckodriver]");
+  const { values } = parseArgs({ options: {
+    target: { type: "string", default: "firefox" },
+    browser: { type: "string" }, driver: { type: "string" }, help: { type: "boolean" },
+  } });
+  if (values.help) console.log("pnpm run check:perf [--target firefox|chromium] [--browser /opt/zen/zen] [--driver /path/to/geckodriver]");
   else {
-    const { runtime, archive } = await packageExtension();
-    process.exitCode = await runPerformance(runtime, {
-      archive, browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? defaultDriver(),
+    const { target } = values;
+    if (target !== "firefox" && target !== "chromium") throw new Error("Expected --target firefox or chromium");
+    if (target === "chromium" && (values.browser || values.driver)) throw new Error("--browser and --driver select Gecko tools only");
+    const { runtime, archive } = await packageExtension(target);
+    process.exitCode = await runPerformance(runtime, target === "chromium" ? { target, archive } : {
+      target, archive, browser: values.browser ?? "/opt/zen/zen", driver: values.driver ?? defaultDriver(),
     });
   }
 }

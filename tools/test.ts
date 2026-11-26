@@ -44,22 +44,28 @@ export async function runChecks(mode: Mode, options: CheckOptions): Promise<numb
       if (status) return status;
     }
   }
-  const packaged = mode === "unit" ? undefined : await packageExtension();
-  const runtime = packaged?.runtime ?? await buildExtension();
+  const firefox = mode === "unit" ? undefined : await packageExtension("firefox");
+  if (mode === "unit") await buildExtension();
   if (mode !== "native") {
     const status = child(process.execPath, ["--expose-gc", "--import", "tsx", "--test", ...testFiles("tests")]);
     if (status || mode === "unit") return status;
   }
-  const archive = packaged?.archive;
-  if (!archive) throw new Error("Expected a packaged extension for native checks");
-  const status = child(process.execPath, ["--import", "tsx", "--test", "--test-concurrency=1", ...testFiles("tests/native")], {
-    ...process.env, LAZY_REVERB_ARCHIVE: archive, LAZY_REVERB_BROWSER: options.browser, LAZY_REVERB_GECKODRIVER: options.driver,
+  if (!firefox) throw new Error("Expected a Firefox package for native checks");
+  const firefoxStatus = child(process.execPath, ["--import", "tsx", "--test", "--test-concurrency=1", ...testFiles("tests/native")], {
+    ...process.env, LAZY_REVERB_ARCHIVE: firefox.archive, LAZY_REVERB_BROWSER: options.browser, LAZY_REVERB_GECKODRIVER: options.driver,
     LAZY_REVERB_SCREENSHOT: options.screenshot ? resolve(options.screenshot) : undefined,
   });
-  if (status || mode !== "push") return status;
-  return runPerformance(runtime, {
-    archive, driver: options.driver, browser: process.env.LAZY_REVERB_ZEN ?? "/opt/zen/zen",
+  if (firefoxStatus) return firefoxStatus;
+  const chromium = await packageExtension("chromium");
+  const chromiumStatus = child(process.execPath, ["--import", "tsx", "--test", "--test-concurrency=1", ...testFiles("tests/chromium")], {
+    ...process.env, LAZY_REVERB_CHROMIUM_ARCHIVE: chromium.archive,
   });
+  if (chromiumStatus || mode !== "push") return chromiumStatus;
+  const zenPerformance = await runPerformance(firefox.runtime, {
+    target: "firefox", archive: firefox.archive, driver: options.driver, browser: process.env.LAZY_REVERB_ZEN ?? "/opt/zen/zen",
+  });
+  if (zenPerformance) return zenPerformance;
+  return runPerformance(chromium.runtime, { target: "chromium", archive: chromium.archive });
 }
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {

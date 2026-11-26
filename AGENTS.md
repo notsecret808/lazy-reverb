@@ -36,33 +36,34 @@ Follow the environment instructions and any parent AGENTS.md. Use RTK for shell 
 
 ## Checks and gates
 
-Run `nvm install`, `nvm use`, and `rtk run pnpm install --frozen-lockfile`. Node and pnpm are pinned in `.nvmrc` and `packageManager`. Native tests require GeckoDriver 0.37.1. Pass `--driver`, put it on `PATH`, or use `dist/drivers/geckodriver`. CI uses the same Node and pnpm versions and Firefox 159.0.
+Run `nvm install`, `nvm use`, and `rtk run pnpm install --frozen-lockfile`. Node and pnpm are pinned in `.nvmrc` and `packageManager`. Native tests require GeckoDriver 0.37.1 and the pinned Playwright Chromium. Pass `--driver`, put GeckoDriver on `PATH`, or use `dist/drivers/geckodriver`. Install Chromium with `rtk run pnpm exec playwright install chromium`. CI uses the same Node and pnpm versions and Firefox 159.0.
 
-Run the functional gate with Zen:
+Run the functional gate with Zen and Chromium:
 
 ```sh
 rtk run pnpm run check --browser /opt/zen/zen
 ```
 
-The gate runs `pnpm run lint` and `pnpm run typecheck` before building, then runs the unit and native tests against a fresh ZIP. Oxlint checks authored source, configuration, tools, and tests with type information. Warnings and backend failures fail the gate. TypeScript checks the browser and Node projects separately. Preserve nonzero exit codes and run automatic fixes separately. Engine tests require `node --expose-gc`. For a narrow change, start with the relevant check.
+The gate runs `pnpm run lint` and `pnpm run typecheck` before building, then runs the unit tests and the native tests against a fresh ZIP for each target. Oxlint checks authored source, configuration, tools, and tests with type information. Warnings and backend failures fail the gate. TypeScript checks the browser and Node projects separately. Preserve nonzero exit codes and run automatic fixes separately. Engine tests require `node --expose-gc`. For a narrow change, start with the relevant check.
 
 Changes to the audio graph, lifecycle, player discovery, or resource use also require the comparative gate:
 
 ```sh
 rtk run pnpm run check:perf --browser /opt/zen/zen
+rtk run pnpm run check:perf --target chromium
 ```
 
-The report is `dist/performance-zen.json`. Exit codes are `0` for pass, `1` for regression, and `2` for missing or noisy data. An inconclusive run does not pass. Keep the budgets fixed when diagnosing a failure. CPU is percent of one core. Memory is PSS for the entire test browser process group. The synthetic benchmark measures a narrower workload than a full YouTube or SoundCloud page.
+Reports are `dist/performance-zen.json` and `dist/performance-chromium.json`. Exit codes are `0` for pass, `1` for regression, and `2` for missing or noisy data. An inconclusive run does not pass. Keep the budgets fixed when diagnosing a failure. CPU is percent of one core. Memory is PSS for the entire test browser process group. The synthetic benchmark measures a narrower workload than a full YouTube or SoundCloud page.
 
-Method 2 measures DSP using Linux `/proc`. One AudioBufferSource and one AudioContext start on a real click. GeckoDriver injects the built engine into the controlled content page between `native_before` and `native_after`. The `paused` phase disconnects the source. Each phase keeps four raw CPU/PSS samples and their intervals, with the median as both summaries. Audio-clock and signal checks run outside sampling windows. Missing samples, process churn, inactive DSP, and noise prevent a pass. CI tests the sampler and verdict against fixtures. A native result of `fail` or `inconclusive` blocks the push.
+Method 2 measures DSP using Linux `/proc`. One AudioBufferSource and one AudioContext start on a real click. The harness injects the built engine into the controlled page after `native_before` and restores the original route in `native_after`. The `paused` phase disconnects the source. Each phase keeps four raw CPU/PSS samples and their intervals, with the median as both summaries. Audio-clock and signal checks run outside sampling windows. Missing samples, process churn, inactive DSP, and noise prevent a pass. CI tests the sampler and verdict against fixtures. A native result of `fail` or `inconclusive` blocks the push.
 
 Report benchmark results and measurement limits. Keep local JSON reports in ignored `dist/`, especially reports from live-page diagnostics.
 
-WebdriverIO installs the fresh ZIP through GeckoDriver. A normal music tab is active when the real popup document initializes in the background. Opening the popup from the toolbar and pressing the physical shortcut are manual checks. On failure, save any available screenshot, HTML, console output, driver log, and scenario step. Use temporary profiles. See [architecture](ARCHITECTURE.md).
+WebdriverIO installs the Firefox ZIP through GeckoDriver. Playwright loads the extracted Chromium ZIP. In both sessions, a normal music tab is active when the real popup document initializes in the background. Opening the popup from the toolbar and pressing the physical shortcut are manual checks. On failure, save any available screenshot, HTML, console output, driver log, and scenario step. Use temporary profiles. See [architecture](ARCHITECTURE.md).
 
-All end-to-end tests use local HTML and WAV data. Before navigation, BiDi serves approved fixtures and aborts all other HTTP(S) requests. Service workers are disabled. Live diagnostics are separate commands, `live:probe`, `live:control`, and `live:perf`, which require an explicit URL.
+All end-to-end tests use local HTML and WAV data. Before navigation, BiDi and Playwright serve approved fixtures and abort other HTTP(S) requests. Service workers are disabled. Live diagnostics are separate commands, `live:probe`, `live:control`, and `live:perf`, which require an explicit URL.
 
-CI checks lint, types, the commit range, unit fixtures, native Firefox, and the ZIP. Zen and the hardware-dependent DSP benchmark run locally.
+CI checks lint, types, the commit range, unit fixtures, native scenarios, and packaging for both targets. Zen and the hardware-dependent DSP benchmark run locally.
 
 ## Packaging and manual verification
 
